@@ -457,8 +457,10 @@ export const CostDriverRulesManager: React.FC<CostDriverRulesManagerProps> = ({
     return getStoredProductPresets();
   }, []);
 
-  // Mode: '' (General / Global across products) or specific product name
-  const [selectedProductName, setSelectedProductName] = useState<string>('');
+  // Mode: select specific product name
+  const [selectedProductName, setSelectedProductName] = useState<string>(
+    () => availableProducts[0]?.name || 'Soja'
+  );
   const [activeScaleTab, setActiveScaleTab] = useState<string>(DEFAULT_PRODUCTION_SCALES[0]?.name || '100L');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copyNotification, setCopyNotification] = useState<string | null>(null);
@@ -678,40 +680,15 @@ export const CostDriverRulesManager: React.FC<CostDriverRulesManagerProps> = ({
             <div className="flex items-center space-x-2">
               <Package className="w-4 h-4 text-cyan-400" />
               <span className="text-xs font-bold text-white uppercase tracking-wider">
-                1. Selecione o Escopo de Produto:
+                1. Selecione o Produto:
               </span>
             </div>
             <span className="text-xs text-slate-400">
-              Escolha entre o Padrão Geral ou selecione um Produto cadastrado para regras específicas.
+              Selecione o produto cadastrado para configurar critérios e fórmulas por escala.
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
-            {/* General (Global) Option */}
-            <button
-              type="button"
-              onClick={() => setSelectedProductName('')}
-              className={`p-3 rounded-xl border text-left transition flex items-start justify-between ${
-                selectedProductName === ''
-                  ? 'bg-gradient-to-br from-cyan-950/90 to-blue-950/60 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
-                  : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              <div>
-                <div className="flex items-center space-x-1.5">
-                  <span className={`text-xs font-bold ${selectedProductName === '' ? 'text-cyan-300' : 'text-white'}`}>
-                    🌐 Padrão Geral (Todas as Ordens)
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Regras base por escala aplicadas a todos os produtos que não tenham regra individual.
-                </p>
-              </div>
-              {selectedProductName === '' && (
-                <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 mt-1" />
-              )}
-            </button>
-
             {/* Registered Products */}
             {availableProducts.map((prod) => {
               const isSelected = selectedProductName === prod.name;
@@ -747,7 +724,7 @@ export const CostDriverRulesManager: React.FC<CostDriverRulesManagerProps> = ({
                         </span>
                       ) : (
                         <span className="text-[9px] font-mono text-slate-500">
-                          Herdando base
+                          Padrão ativo
                         </span>
                       )}
                     </div>
@@ -815,7 +792,7 @@ export const CostDriverRulesManager: React.FC<CostDriverRulesManagerProps> = ({
             <div className="flex items-center space-x-2">
               <span className="text-slate-400">Editando regras de:</span>
               <span className="font-bold text-cyan-300 font-mono">
-                {selectedProductName ? `Produto "${selectedProductName}"` : 'Todas as Ordens (Padrão Geral)'}
+                Produto "{selectedProductName}"
               </span>
               <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
               <span className="font-bold text-white font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-700">

@@ -607,33 +607,6 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   );
                 })}
               </div>
-
-              {/* Standards Loaded Preview Card */}
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 text-[11px] flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <Lock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span>
-                    Standards puxados para <strong className="text-cyan-300">{productName}</strong> na escala <strong className="text-white">{selectedScale}</strong>:
-                  </span>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
-                  {PROCESS_STAGES.map((st) => (
-                    <span
-                      key={st.id}
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 flex items-center gap-1"
-                    >
-                      <span className="text-slate-500">{st.shortLabel}:</span>
-                      <strong className="text-cyan-400">{stages[st.id]?.standardMin || st.defaultStandardMin}m</strong>
-                    </span>
-                  ))}
-                  <span className="px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-800/60 text-cyan-300 font-bold">
-                    Total: {PROCESS_STAGES.reduce((acc, st) => acc + (stages[st.id]?.standardMin || st.defaultStandardMin), 0)}m (
-                    {formatMinutes(PROCESS_STAGES.reduce((acc, st) => acc + (stages[st.id]?.standardMin || st.defaultStandardMin), 0))}
-                    )
-                  </span>
-                </div>
-              </div>
             </div>
 
             {/* Linked / Committed Order (Empenho de OP) */}
@@ -956,16 +929,6 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                           >
                             Agora
                           </button>
-                        </div>
-
-                        {/* Standard Min (Locked by Product/Scale configuration) */}
-                        <div
-                          className="flex items-center space-x-1.5 ml-auto bg-slate-950 px-2 py-1 rounded border border-slate-800"
-                          title="Tempo Standard bloqueado e definido na tela de Standards por escala"
-                        >
-                          <Lock className="w-2.5 h-2.5 text-slate-500" />
-                          <span className="text-[10px] text-slate-500 uppercase font-mono">Meta:</span>
-                          <span className="text-xs font-mono font-bold text-cyan-300">{stageData.standardMin}m</span>
                         </div>
                       </div>
 

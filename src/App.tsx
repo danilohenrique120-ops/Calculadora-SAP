@@ -169,7 +169,7 @@ export default function App() {
 
         unsubscribeOrders = subscribeToOrders(
           (cloudOrders) => {
-            if (cloudOrders && cloudOrders.length > 0) {
+            if (Array.isArray(cloudOrders)) {
               setOrders(cloudOrders);
             }
           },
@@ -181,8 +181,8 @@ export default function App() {
 
         unsubscribePresets = subscribeToPresets(
           (cloudPresets) => {
-            if (cloudPresets && cloudPresets.length > 0) {
-              setPresets(cloudPresets);
+            if (Array.isArray(cloudPresets)) {
+              setPresets(normalizeProductPresets(cloudPresets));
             }
           },
           (err) => console.error('Presets sync error:', err)
@@ -190,7 +190,7 @@ export default function App() {
 
         unsubscribeBios = subscribeToBioreactors(
           (cloudBios) => {
-            if (cloudBios && cloudBios.length > 0) {
+            if (Array.isArray(cloudBios)) {
               setBioreactors(cloudBios);
             }
           },
@@ -199,7 +199,7 @@ export default function App() {
 
         unsubscribeOps = subscribeToOperators(
           (cloudOps) => {
-            if (cloudOps && cloudOps.length > 0) {
+            if (Array.isArray(cloudOps)) {
               setOperators(cloudOps);
             }
           },
@@ -208,7 +208,7 @@ export default function App() {
 
         unsubscribeRules = subscribeToDriverRules(
           (cloudRules) => {
-            if (cloudRules && cloudRules.length > 0) {
+            if (Array.isArray(cloudRules) && cloudRules.length > 0) {
               setDriverRules(cloudRules);
               saveStoredCostDriverRules(cloudRules);
             }

@@ -63,60 +63,85 @@ export const COLLECTIONS = {
   CONFIGS: 'system_configs',
 };
 
-// Check and Seed Database if Empty
+// Check and Seed Database if Truly Fresh / Uninitialized (runs ONLY ONCE ever, never on refresh)
 export async function seedDatabaseIfEmpty() {
   try {
-    const ordersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
-    if (ordersSnap.empty) {
-      console.log('Seeding initial database data...');
-      const batch = writeBatch(db);
+    const initRef = doc(db, COLLECTIONS.CONFIGS, 'system_init');
+    const initSnap = await getDoc(initRef);
 
-      // Seed Initial Orders
-      INITIAL_MOCK_ORDERS.forEach((order) => {
-        const orderRef = doc(db, COLLECTIONS.ORDERS, order.id);
-        batch.set(orderRef, order);
-      });
-
-      // Seed Initial Presets
-      const normalizedPresets = normalizeProductPresets(PRODUCT_PRESETS);
-      normalizedPresets.forEach((preset) => {
-        const presetRef = doc(db, COLLECTIONS.PRESETS, preset.id);
-        batch.set(presetRef, preset);
-      });
-
-      // Seed Initial Bioreactors
-      INITIAL_BIOREACTORS.forEach((bio) => {
-        const bioRef = doc(db, COLLECTIONS.BIOREACTORS, bio.id);
-        batch.set(bioRef, bio);
-      });
-
-      // Seed Initial Operators
-      INITIAL_OPERATORS.forEach((op) => {
-        const opRef = doc(db, COLLECTIONS.OPERATORS, op.id);
-        batch.set(opRef, op);
-      });
-
-      // Seed Driver Rules
-      const driverRulesRef = doc(db, COLLECTIONS.CONFIGS, 'driver_rules');
-      batch.set(driverRulesRef, {
-        id: 'driver_rules',
-        type: 'driver_rules',
-        rules: DEFAULT_COST_DRIVER_RULES,
-        updatedAt: new Date().toISOString(),
-      });
-
-      // Seed Variance Thresholds
-      const thresholdsRef = doc(db, COLLECTIONS.CONFIGS, 'variance_thresholds');
-      batch.set(thresholdsRef, {
-        id: 'variance_thresholds',
-        type: 'variance_thresholds',
-        thresholds: DEFAULT_VARIANCE_THRESHOLDS,
-        updatedAt: new Date().toISOString(),
-      });
-
-      await batch.commit();
-      console.log('Initial database seeded successfully.');
+    // If database was already initialized at least once, NEVER re-seed!
+    // This ensures user deletions and additions remain 100% persistent across reloads and devices.
+    if (initSnap.exists()) {
+      return;
     }
+
+    // Check if there are already any orders or presets existing
+    const ordersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
+    const presetsSnap = await getDocs(collection(db, COLLECTIONS.PRESETS));
+
+    if (!ordersSnap.empty || !presetsSnap.empty) {
+      // Mark as initialized so it never checks again
+      await setDoc(initRef, {
+        isInitialized: true,
+        initializedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    console.log('First-time setup: Seeding initial baseline data...');
+    const batch = writeBatch(db);
+
+    // Seed Initial Orders
+    INITIAL_MOCK_ORDERS.forEach((order) => {
+      const orderRef = doc(db, COLLECTIONS.ORDERS, order.id);
+      batch.set(orderRef, order);
+    });
+
+    // Seed Initial Presets
+    const normalizedPresets = normalizeProductPresets(PRODUCT_PRESETS);
+    normalizedPresets.forEach((preset) => {
+      const presetRef = doc(db, COLLECTIONS.PRESETS, preset.id);
+      batch.set(presetRef, preset);
+    });
+
+    // Seed Initial Bioreactors
+    INITIAL_BIOREACTORS.forEach((bio) => {
+      const bioRef = doc(db, COLLECTIONS.BIOREACTORS, bio.id);
+      batch.set(bioRef, bio);
+    });
+
+    // Seed Initial Operators
+    INITIAL_OPERATORS.forEach((op) => {
+      const opRef = doc(db, COLLECTIONS.OPERATORS, op.id);
+      batch.set(opRef, op);
+    });
+
+    // Seed Driver Rules
+    const driverRulesRef = doc(db, COLLECTIONS.CONFIGS, 'driver_rules');
+    batch.set(driverRulesRef, {
+      id: 'driver_rules',
+      type: 'driver_rules',
+      rules: DEFAULT_COST_DRIVER_RULES,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Seed Variance Thresholds
+    const thresholdsRef = doc(db, COLLECTIONS.CONFIGS, 'variance_thresholds');
+    batch.set(thresholdsRef, {
+      id: 'variance_thresholds',
+      type: 'variance_thresholds',
+      thresholds: DEFAULT_VARIANCE_THRESHOLDS,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Mark system as initialized
+    batch.set(initRef, {
+      isInitialized: true,
+      initializedAt: new Date().toISOString(),
+    });
+
+    await batch.commit();
+    console.log('Baseline database initialized successfully.');
   } catch (error) {
     console.error('Error checking/seeding database:', error);
   }
