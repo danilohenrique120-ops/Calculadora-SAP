@@ -1,0 +1,6 @@
+{
+  "name": "Calculadora SAP 4.0",
+  "description": "Sistema avançado de cálculo e apontamento SAP 4.0 para ordens de produção em biorreatores e formulação com análise em tempo real de desvios e critérios de custos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

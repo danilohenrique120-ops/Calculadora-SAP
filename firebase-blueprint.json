@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "ProductionOrder": {
+      "collectionName": "orders",
+      "description": "Ordens de produção com apontamentos de etapas e métricas",
+      "properties": {
+        "id": { "type": "string" },
+        "opNumber": { "type": "string" },
+        "prepDate": { "type": "string" },
+        "scaleName": { "type": "string" },
+        "bioreactorId": { "type": "string" },
+        "productName": { "type": "string" },
+        "status": { "type": "string" },
+        "stages": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "opNumber", "prepDate", "scaleName", "productName", "stages"]
+    },
+    "ProductPreset": {
+      "collectionName": "product_presets",
+      "description": "Produtos cadastrados e seus padrões de etapas por escala",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "scales": { "type": "array" }
+      },
+      "required": ["id", "name", "scales"]
+    },
+    "BioreactorItem": {
+      "collectionName": "bioreactors",
+      "description": "Equipamentos e biorreatores cadastrados",
+      "properties": {
+        "id": { "type": "string" },
+        "tag": { "type": "string" },
+        "scale": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "tag", "scale"]
+    },
+    "OperatorItem": {
+      "collectionName": "operators",
+      "description": "Operadores e analistas cadastrados",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "SystemConfig": {
+      "collectionName": "system_configs",
+      "description": "Configurações gerais do sistema como regras de drivers e faixas de semáforo",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "data": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "data"]
+    }
+  }
+}
