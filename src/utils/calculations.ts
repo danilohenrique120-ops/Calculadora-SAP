@@ -1093,10 +1093,10 @@ export function calcStageMetrics(
   const hmVarianceMin = realHmMin - stdBreakdown.hmMin;
   const ggfVarianceMin = realGgfMin - stdBreakdown.ggfMin;
 
-  // Variação percentual de eficiência individual (% Standard / Real)
-  const hhVariancePercent = realHhMin > 0 ? (stdBreakdown.hhMin / realHhMin) * 100 : (stdBreakdown.hhMin === 0 ? 100 : 0);
-  const hmVariancePercent = realHmMin > 0 ? (stdBreakdown.hmMin / realHmMin) * 100 : (stdBreakdown.hmMin === 0 ? 100 : 0);
-  const ggfVariancePercent = realGgfMin > 0 ? (stdBreakdown.ggfMin / realGgfMin) * 100 : (stdBreakdown.ggfMin === 0 ? 100 : 0);
+  // Variação percentual da regra do usuário: ((Standard - Real) / Standard) * 100
+  const hhVariancePercent = stdBreakdown.hhMin > 0 ? ((stdBreakdown.hhMin - realHhMin) / stdBreakdown.hhMin) * 100 : (realHhMin === 0 ? 0 : -100);
+  const hmVariancePercent = stdBreakdown.hmMin > 0 ? ((stdBreakdown.hmMin - realHmMin) / stdBreakdown.hmMin) * 100 : (realHmMin === 0 ? 0 : -100);
+  const ggfVariancePercent = stdBreakdown.ggfMin > 0 ? ((stdBreakdown.ggfMin - realGgfMin) / stdBreakdown.ggfMin) * 100 : (realGgfMin === 0 ? 0 : -100);
 
   // Desvio consolidado do direcionador principal (HM/Gargalo)
   const primaryVarianceMin = hmVarianceMin;
@@ -1206,7 +1206,7 @@ export function calcOrderTotals(
   });
 
   const totalVarianceMin = realHmTotal - stdHmTotal;
-  const totalVariancePercent = realHmTotal > 0 ? (stdHmTotal / realHmTotal) * 100 : 0;
+  const totalVariancePercent = stdHmTotal > 0 ? ((stdHmTotal - realHmTotal) / stdHmTotal) * 100 : 0;
 
   let overallStatus: StageStatus = 'pending';
   if (completedStagesCount > 0) {
@@ -1230,25 +1230,25 @@ export function calcOrderTotals(
     return m.isFilled && m.status === 'critical';
   });
 
-  // Consolidated Cost Totals (HH, HM, GGF)
+  // Consolidated Cost Totals (HH, HM, GGF) using the user's formula: ((Standard - Real) / Standard) * 100
   const costTotals = {
     hh: {
       standardMin: stdHhTotal,
       realMin: realHhTotal,
       varianceMin: realHhTotal - stdHhTotal,
-      variancePercent: realHhTotal > 0 ? (stdHhTotal / realHhTotal) * 100 : (completedStagesCount === 0 ? 100 : 0),
+      variancePercent: stdHhTotal > 0 ? ((stdHhTotal - realHhTotal) / stdHhTotal) * 100 : (completedStagesCount === 0 ? 0 : (realHhTotal === 0 ? 0 : -100)),
     },
     hm: {
       standardMin: stdHmTotal,
       realMin: realHmTotal,
       varianceMin: realHmTotal - stdHmTotal,
-      variancePercent: realHmTotal > 0 ? (stdHmTotal / realHmTotal) * 100 : (completedStagesCount === 0 ? 100 : 0),
+      variancePercent: stdHmTotal > 0 ? ((stdHmTotal - realHmTotal) / stdHmTotal) * 100 : (completedStagesCount === 0 ? 0 : (realHmTotal === 0 ? 0 : -100)),
     },
     ggf: {
       standardMin: stdGgfTotal,
       realMin: realGgfTotal,
       varianceMin: realGgfTotal - stdGgfTotal,
-      variancePercent: realGgfTotal > 0 ? (stdGgfTotal / realGgfTotal) * 100 : (completedStagesCount === 0 ? 100 : 0),
+      variancePercent: stdGgfTotal > 0 ? ((stdGgfTotal - realGgfTotal) / stdGgfTotal) * 100 : (completedStagesCount === 0 ? 0 : (realGgfTotal === 0 ? 0 : -100)),
     },
   };
 
@@ -1303,11 +1303,12 @@ export function formatMinutes(minutes: number, verbose: boolean = false): string
 }
 
 /**
- * Formats percentage (e.g. 49.7%, 100.0%)
+ * Formats percentage (e.g. +3.2%, -4.9%, 0.0%)
  */
-export function formatPercent(value: number): string {
+export function formatPercent(value: number, showPlus = true): string {
   if (isNaN(value)) return '0.0%';
-  return `${value.toFixed(1)}%`;
+  const prefix = showPlus && value > 0 ? '+' : '';
+  return `${prefix}${value.toFixed(1)}%`;
 }
 
 /**

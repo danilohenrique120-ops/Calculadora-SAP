@@ -80,7 +80,7 @@ export const VarianceThresholdsManager: React.FC<VarianceThresholdsManagerProps>
 
   // Simulator evaluations
   const simVarianceMin = simRealMin - simStandardMin;
-  const simVariancePercent = simRealMin > 0 ? (simStandardMin / simRealMin) * 100 : (simStandardMin === 0 ? 100 : 0);
+  const simVariancePercent = simStandardMin > 0 ? ((simStandardMin - simRealMin) / simStandardMin) * 100 : 0;
   const simEvaluatedStatus: StageStatus = useMemo(() => {
     return evaluateVarianceStatus(simVarianceMin, simVariancePercent, thresholds);
   }, [simVarianceMin, simVariancePercent, thresholds]);
@@ -166,7 +166,7 @@ export const VarianceThresholdsManager: React.FC<VarianceThresholdsManagerProps>
               )}
             </div>
             <p className="text-[11px] text-slate-400">
-              Compara a taxa de aderência <code className="text-slate-300">% Standard ÷ Real</code>.
+              Compara a taxa de variação <code className="text-slate-300">(Standard - Real) ÷ Standard</code>.
             </p>
           </button>
 

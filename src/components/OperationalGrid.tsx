@@ -834,7 +834,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                                         <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
                                           <div
                                             className={`h-full ${totals.costTotals.hh.varianceMin > 0 ? 'bg-amber-400' : 'bg-blue-400'}`}
-                                            style={{ width: `${Math.min(100, totals.costTotals.hh.variancePercent || 100)}%` }}
+                                            style={{ width: `${Math.min(100, totals.costTotals.hh.standardMin > 0 ? (totals.costTotals.hh.realMin / totals.costTotals.hh.standardMin) * 100 : 100)}%` }}
                                           />
                                         </div>
                                       </div>
@@ -860,7 +860,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                                         <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
                                           <div
                                             className={`h-full ${totals.costTotals.hm.varianceMin > 0 ? 'bg-amber-400' : 'bg-amber-400'}`}
-                                            style={{ width: `${Math.min(100, totals.costTotals.hm.variancePercent || 100)}%` }}
+                                            style={{ width: `${Math.min(100, totals.costTotals.hm.standardMin > 0 ? (totals.costTotals.hm.realMin / totals.costTotals.hm.standardMin) * 100 : 100)}%` }}
                                           />
                                         </div>
                                       </div>
@@ -886,7 +886,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                                         <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
                                           <div
                                             className={`h-full ${totals.costTotals.ggf.varianceMin > 0 ? 'bg-rose-400' : 'bg-purple-400'}`}
-                                            style={{ width: `${Math.min(100, totals.costTotals.ggf.variancePercent || 100)}%` }}
+                                            style={{ width: `${Math.min(100, totals.costTotals.ggf.standardMin > 0 ? (totals.costTotals.ggf.realMin / totals.costTotals.ggf.standardMin) * 100 : 100)}%` }}
                                           />
                                         </div>
                                       </div>
