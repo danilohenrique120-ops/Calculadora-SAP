@@ -40,6 +40,7 @@ import {
 } from '../types';
 import {
   calcStageMetrics,
+  calcCombinedAbastecimentoPreparoMetrics,
   calcOrderTotals,
   formatMinutes,
   formatPercent,
@@ -47,6 +48,7 @@ import {
 } from '../utils/calculations';
 import { BIOREACTOR_LIST, OPERATOR_LIST, PRODUCT_PRESETS } from '../utils/mockData';
 import { StageCell } from './StageCell';
+import { CombinedStageCell } from './CombinedStageCell';
 import { ConfirmModal } from './ConfirmModal';
 
 interface OperationalGridProps {
@@ -518,15 +520,26 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                       <ArrowUpDown className="w-3 h-3 text-slate-500" />
                     </div>
                   </th>
-                  {/* 5 Stage Columns */}
-                  {PROCESS_STAGES.map((stage) => (
-                    <th key={stage.id} className="py-3 px-2 text-center min-w-[140px]">
-                      <div className="font-semibold text-slate-200">{stage.label}</div>
-                      <span className="text-[9px] text-slate-500 font-normal">
-                        Std: {stage.defaultStandardMin}m
-                      </span>
-                    </th>
-                  ))}
+                  {/* Stage Columns (Setup, Abastecimento & Preparo Unificados, Inoculação, Multiplicação) */}
+                  <th className="py-3 px-2 text-center min-w-[140px]">
+                    <div className="font-semibold text-slate-200">1. Setup Inicial</div>
+                    <span className="text-[9px] text-slate-500 font-normal">Std: 60m</span>
+                  </th>
+                  <th className="py-3 px-2 text-center min-w-[160px]">
+                    <div className="font-semibold text-cyan-300 flex items-center justify-center gap-1">
+                      <span>2. Abastecimento & Preparo</span>
+                    </div>
+                    <span className="text-[9px] text-cyan-500/80 font-normal">Std: 135m (45m + 90m)</span>
+                  </th>
+                  <th className="py-3 px-2 text-center min-w-[140px]">
+                    <div className="font-semibold text-slate-200">4. Inoculação</div>
+                    <span className="text-[9px] text-slate-500 font-normal">Std: 30m</span>
+                  </th>
+                  <th className="py-3 px-2 text-center min-w-[140px]">
+                    <div className="font-semibold text-slate-200">5. Multiplicação</div>
+                    <span className="text-[9px] text-slate-500 font-normal">Std: 720m</span>
+                  </th>
+
                   {/* Totals Column */}
                   <th
                     onClick={() => handleSort('totalVarianceMin')}
@@ -544,7 +557,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
               <tbody className="divide-y divide-slate-800/50 text-xs">
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-500">
+                    <td colSpan={8} className="py-12 text-center text-slate-500">
                       <FlaskConical className="w-10 h-10 mx-auto mb-2 opacity-30 text-cyan-400" />
                       <p className="text-sm font-semibold text-slate-400">
                         Nenhuma ordem de produção encontrada com os filtros aplicados.
@@ -636,26 +649,83 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                             </div>
                           </td>
 
-                          {/* 5 Stage Cells */}
-                          {PROCESS_STAGES.map((stageDef) => (
-                            <td key={stageDef.id} className="py-2 px-1.5 align-top">
-                              <StageCell
-                                stageId={stageDef.id}
-                                stageName={stageDef.shortLabel}
-                                record={order.stages[stageDef.id]}
-                                prepDate={order.prepDate}
-                                orderProductName={order.productName}
-                                orderScaleName={order.scaleName}
-                                orderStages={order.stages}
-                                onUpdate={(updates) =>
-                                  handleStageUpdate(order, stageDef.id, updates)
-                                }
-                                directEditMode={directEditMode}
-                                driverRules={driverRules}
-                                varianceThresholds={varianceThresholds}
-                              />
-                            </td>
-                          ))}
+                          {/* 1. Setup Inicial */}
+                          <td className="py-2 px-1.5 align-top">
+                            <StageCell
+                              stageId="setup"
+                              stageName="1. Setup"
+                              record={order.stages['setup']}
+                              prepDate={order.prepDate}
+                              orderProductName={order.productName}
+                              orderScaleName={order.scaleName}
+                              orderStages={order.stages}
+                              onUpdate={(updates) =>
+                                handleStageUpdate(order, 'setup', updates)
+                              }
+                              directEditMode={directEditMode}
+                              driverRules={driverRules}
+                              varianceThresholds={varianceThresholds}
+                            />
+                          </td>
+
+                          {/* 2. Abastecimento & Preparo Unificados */}
+                          <td className="py-2 px-1.5 align-top">
+                            <CombinedStageCell
+                              abastRecord={order.stages['abastecimento']}
+                              prepRecord={order.stages['preparo']}
+                              prepDate={order.prepDate}
+                              orderProductName={order.productName}
+                              orderScaleName={order.scaleName}
+                              orderStages={order.stages}
+                              onUpdateAbastecimento={(updates) =>
+                                handleStageUpdate(order, 'abastecimento', updates)
+                              }
+                              onUpdatePreparo={(updates) =>
+                                handleStageUpdate(order, 'preparo', updates)
+                              }
+                              directEditMode={directEditMode}
+                              driverRules={driverRules}
+                              varianceThresholds={varianceThresholds}
+                            />
+                          </td>
+
+                          {/* 4. Inoculação */}
+                          <td className="py-2 px-1.5 align-top">
+                            <StageCell
+                              stageId="inoculacao"
+                              stageName="4. Inoculação"
+                              record={order.stages['inoculacao']}
+                              prepDate={order.prepDate}
+                              orderProductName={order.productName}
+                              orderScaleName={order.scaleName}
+                              orderStages={order.stages}
+                              onUpdate={(updates) =>
+                                handleStageUpdate(order, 'inoculacao', updates)
+                              }
+                              directEditMode={directEditMode}
+                              driverRules={driverRules}
+                              varianceThresholds={varianceThresholds}
+                            />
+                          </td>
+
+                          {/* 5. Multiplicação */}
+                          <td className="py-2 px-1.5 align-top">
+                            <StageCell
+                              stageId="multiplicacao"
+                              stageName="5. Multiplicação"
+                              record={order.stages['multiplicacao']}
+                              prepDate={order.prepDate}
+                              orderProductName={order.productName}
+                              orderScaleName={order.scaleName}
+                              orderStages={order.stages}
+                              onUpdate={(updates) =>
+                                handleStageUpdate(order, 'multiplicacao', updates)
+                              }
+                              directEditMode={directEditMode}
+                              driverRules={driverRules}
+                              varianceThresholds={varianceThresholds}
+                            />
+                          </td>
 
                           {/* Total Time & Variance Pill */}
                           <td className="py-3 px-3 text-right">
@@ -1226,71 +1296,91 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                       </div>
                     </div>
 
-                    {/* Stage Step Indicators */}
-                    <div className="space-y-1.5 mb-3">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                        <span>Progresso do Processo</span>
-                        <span>{totals.completedStagesCount} / 5 etapas</span>
-                      </div>
+                    {/* Stage Step Indicators (4 Process Columns) */}
+                    {(() => {
+                      const setupM = calcStageMetrics(order.stages['setup'], order.prepDate, 'setup', driverRules, {
+                        scaleName: order.scaleName,
+                        bioreactorId: order.bioreactorId,
+                        allStages: order.stages,
+                        productName: order.productName,
+                      }, varianceThresholds);
+                      const abastPrepM = calcCombinedAbastecimentoPreparoMetrics(order.stages, order.prepDate, {
+                        scaleName: order.scaleName,
+                        bioreactorId: order.bioreactorId,
+                        allStages: order.stages,
+                        productName: order.productName,
+                      }, driverRules, varianceThresholds);
+                      const inocM = calcStageMetrics(order.stages['inoculacao'], order.prepDate, 'inoculacao', driverRules, {
+                        scaleName: order.scaleName,
+                        bioreactorId: order.bioreactorId,
+                        allStages: order.stages,
+                        productName: order.productName,
+                      }, varianceThresholds);
+                      const multM = calcStageMetrics(order.stages['multiplicacao'], order.prepDate, 'multiplicacao', driverRules, {
+                        scaleName: order.scaleName,
+                        bioreactorId: order.bioreactorId,
+                        allStages: order.stages,
+                        productName: order.productName,
+                      }, varianceThresholds);
 
-                      <div className="grid grid-cols-5 gap-1">
-                        {PROCESS_STAGES.map((s) => {
-                          const stage = order.stages[s.id];
-                          const m = calcStageMetrics(stage, order.prepDate, s.id, driverRules, {
-                            scaleName: order.scaleName,
-                            bioreactorId: order.bioreactorId,
-                            allStages: order.stages,
-                            productName: order.productName,
-                          }, varianceThresholds);
-                          const t = getStatusTheme(m.status);
-                          return (
-                            <div
-                              key={s.id}
-                              title={`${s.label}: ${m.isFilled ? `${m.durationMin}m (${m.varianceMin > 0 ? `+${m.varianceMin}` : m.varianceMin}m)` : 'Pendente'}`}
-                              className={`h-2 rounded-sm transition-all ${
-                                m.isFilled ? t.pill : 'bg-slate-800'
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
+                      const steps = [
+                        { label: 'Setup', m: setupM, theme: getStatusTheme(setupM.status) },
+                        { label: 'Abast. & Prep.', m: abastPrepM, theme: getStatusTheme(abastPrepM.status) },
+                        { label: 'Inoculação', m: inocM, theme: getStatusTheme(inocM.status) },
+                        { label: 'Multiplicação', m: multM, theme: getStatusTheme(multM.status) },
+                      ];
 
-                    {/* Stage Breakdown Badges */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5 text-[11px] font-mono mb-3">
-                      {PROCESS_STAGES.map((s) => {
-                        const stage = order.stages[s.id];
-                        const m = calcStageMetrics(stage, order.prepDate, s.id, driverRules, {
-                          scaleName: order.scaleName,
-                          bioreactorId: order.bioreactorId,
-                          allStages: order.stages,
-                          productName: order.productName,
-                        });
-                        const t = getStatusTheme(m.status);
-                        return (
-                          <div
-                            key={s.id}
-                            className={`p-1.5 rounded border flex flex-col justify-between ${
-                              m.isFilled ? `${t.bg} ${t.border}` : 'bg-slate-950/60 border-slate-800 text-slate-500'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>{s.shortLabel}</span>
-                              <span className="font-bold">
-                                {m.isFilled ? `${m.durationMin}m` : '--'}
-                              </span>
+                      const completedCount = [setupM.isFilled, abastPrepM.isFilled, inocM.isFilled, multM.isFilled].filter(Boolean).length;
+
+                      return (
+                        <>
+                          <div className="space-y-1.5 mb-3">
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                              <span>Progresso das Etapas</span>
+                              <span>{completedCount} / 4 etapas</span>
                             </div>
-                            {m.costMetrics && m.isFilled && (
-                              <div className="flex items-center justify-between text-[8px] text-slate-400 pt-0.5 mt-0.5 border-t border-white/5">
-                                <span className="text-blue-300">HH:{m.costMetrics.real.hhMin}m</span>
-                                <span className="text-amber-300">HM:{m.costMetrics.real.hmMin}m</span>
-                                <span className="text-purple-300">GGF:{m.costMetrics.real.ggfMin}m</span>
-                              </div>
-                            )}
+
+                            <div className="grid grid-cols-4 gap-1">
+                              {steps.map((st, idx) => (
+                                <div
+                                  key={idx}
+                                  title={`${st.label}: ${st.m.isFilled ? `${st.m.durationMin}m (${st.m.varianceMin > 0 ? `+${st.m.varianceMin}` : st.m.varianceMin}m)` : 'Pendente'}`}
+                                  className={`h-2 rounded-sm transition-all ${
+                                    st.m.isFilled ? st.theme.pill : 'bg-slate-800'
+                                  }`}
+                                />
+                              ))}
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
+
+                          {/* Stage Breakdown Badges */}
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono mb-3">
+                            {steps.map((st, idx) => (
+                              <div
+                                key={idx}
+                                className={`p-1.5 rounded border flex flex-col justify-between ${
+                                  st.m.isFilled ? `${st.theme.bg} ${st.theme.border}` : 'bg-slate-950/60 border-slate-800 text-slate-500'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="truncate max-w-[90px]">{st.label}</span>
+                                  <span className="font-bold">
+                                    {st.m.isFilled ? `${st.m.durationMin}m` : '--'}
+                                  </span>
+                                </div>
+                                {st.m.costMetrics && st.m.isFilled && (
+                                  <div className="flex items-center justify-between text-[8px] text-slate-400 pt-0.5 mt-0.5 border-t border-white/5">
+                                    <span className="text-blue-300">HH:{st.m.costMetrics.real.hhMin}m</span>
+                                    <span className="text-amber-300">HM:{st.m.costMetrics.real.hmMin}m</span>
+                                    <span className="text-purple-300">GGF:{st.m.costMetrics.real.ggfMin}m</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
 
                     {/* Consolidated Cost Drivers Pill (HH, HM, GGF) in Card */}
                     {totals.costTotals && (

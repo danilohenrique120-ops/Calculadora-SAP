@@ -1021,7 +1021,19 @@ export const CostDriverRulesManager: React.FC<CostDriverRulesManagerProps> = ({
                     0{stage.sequence}0
                   </span>
                   <div>
-                    <h3 className="text-base font-bold text-white tracking-tight">{stage.label}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-white tracking-tight">{stage.label}</h3>
+                      {stage.id === 'abastecimento' && (
+                        <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-semibold">
+                          🔗 Unificado no Grid com Preparo
+                        </span>
+                      )}
+                      {stage.id === 'preparo' && (
+                        <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/60 font-semibold">
+                          🔗 Unificado no Grid com Abastecimento
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-400">{stage.description}</p>
                   </div>
                 </div>

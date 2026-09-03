@@ -1140,6 +1140,125 @@ export function calcStageMetrics(
 }
 
 /**
+ * Calculates unified/combined metrics for Abastecimento and Preparo together.
+ * Preserves exact individual stage recordings while aggregating standard & real times
+ * for HH, HM and GGF cost drivers and variance metrics.
+ */
+export function calcCombinedAbastecimentoPreparoMetrics(
+  stages: Record<string, StageRecord> | undefined,
+  defaultDate?: string,
+  orderContext?: {
+    scaleName?: string;
+    bioreactorId?: string;
+    productName?: string;
+    product?: ProductPreset;
+    allStages?: Record<string, StageRecord>;
+  },
+  customRules?: CostDriverRule[],
+  customThresholds?: VarianceThresholdConfig
+) {
+  const abastStage = stages?.['abastecimento'];
+  const prepStage = stages?.['preparo'];
+
+  const abastMetrics = calcStageMetrics(
+    abastStage,
+    defaultDate,
+    'abastecimento',
+    customRules,
+    orderContext,
+    customThresholds
+  );
+
+  const prepMetrics = calcStageMetrics(
+    prepStage,
+    defaultDate,
+    'preparo',
+    customRules,
+    orderContext,
+    customThresholds
+  );
+
+  const isAbastFilled = abastMetrics.isFilled;
+  const isPrepFilled = prepMetrics.isFilled;
+  const isFilled = isAbastFilled || isPrepFilled;
+
+  // Real duration sum
+  const durationMin = (isAbastFilled ? abastMetrics.durationMin : 0) + (isPrepFilled ? prepMetrics.durationMin : 0);
+
+  // Standard breakdown sum
+  const stdHh = (abastMetrics.costMetrics?.standard.hhMin || 0) + (prepMetrics.costMetrics?.standard.hhMin || 0);
+  const stdHm = (abastMetrics.costMetrics?.standard.hmMin || 0) + (prepMetrics.costMetrics?.standard.hmMin || 0);
+  const stdGgf = (abastMetrics.costMetrics?.standard.ggfMin || 0) + (prepMetrics.costMetrics?.standard.ggfMin || 0);
+
+  // Real breakdown sum
+  const realHh = (isAbastFilled ? abastMetrics.costMetrics?.real.hhMin || 0 : 0) + (isPrepFilled ? prepMetrics.costMetrics?.real.hhMin || 0 : 0);
+  const realHm = (isAbastFilled ? abastMetrics.costMetrics?.real.hmMin || 0 : 0) + (isPrepFilled ? prepMetrics.costMetrics?.real.hmMin || 0 : 0);
+  const realGgf = (isAbastFilled ? abastMetrics.costMetrics?.real.ggfMin || 0 : 0) + (isPrepFilled ? prepMetrics.costMetrics?.real.ggfMin || 0 : 0);
+
+  // Variances (Real - Standard)
+  const hhVarMin = realHh - stdHh;
+  const hmVarMin = realHm - stdHm;
+  const ggfVarMin = realGgf - stdGgf;
+
+  // Variance %: ((Std - Real) / Std) * 100
+  const hhVarPct = stdHh > 0 ? ((stdHh - realHh) / stdHh) * 100 : (realHh === 0 ? 0 : -100);
+  const hmVarPct = stdHm > 0 ? ((stdHm - realHm) / stdHm) * 100 : (realHm === 0 ? 0 : -100);
+  const ggfVarPct = stdGgf > 0 ? ((stdGgf - realGgf) / stdGgf) * 100 : (realGgf === 0 ? 0 : -100);
+
+  // Evaluate status
+  let status: StageStatus = 'pending';
+  if (isFilled) {
+    const hhStatus = evaluateVarianceStatus(hhVarMin, hhVarPct, customThresholds);
+    const hmStatus = evaluateVarianceStatus(hmVarMin, hmVarPct, customThresholds);
+    if (hhStatus === 'critical' || hmStatus === 'critical') {
+      status = 'critical';
+    } else if (hhStatus === 'warning' || hmStatus === 'warning') {
+      status = 'warning';
+    } else {
+      status = 'ok';
+    }
+  }
+
+  // Combined start / end date & time display
+  const startObj = isAbastFilled && abastStage?.startTime
+    ? { date: abastStage.startDate || defaultDate, time: abastStage.startTime }
+    : isPrepFilled && prepStage?.startTime
+    ? { date: prepStage.startDate || defaultDate, time: prepStage.startTime }
+    : null;
+
+  const endObj = isPrepFilled && prepStage?.endTime
+    ? { date: prepStage.endDate || defaultDate, time: prepStage.endTime }
+    : isAbastFilled && abastStage?.endTime
+    ? { date: abastStage.endDate || defaultDate, time: abastStage.endTime }
+    : null;
+
+  return {
+    abastMetrics,
+    prepMetrics,
+    isFilled,
+    durationMin,
+    standardMin: stdHm || (abastStage?.standardMin || 0) + (prepStage?.standardMin || 0),
+    varianceMin: hmVarMin,
+    variancePercent: hmVarPct,
+    status,
+    startObj,
+    endObj,
+    costMetrics: {
+      standard: { hhMin: stdHh, hmMin: stdHm, ggfMin: stdGgf },
+      real: { hhMin: realHh, hmMin: realHm, ggfMin: realGgf },
+      variance: {
+        hhMin: hhVarMin,
+        hmMin: hmVarMin,
+        ggfMin: ggfVarMin,
+        hhPercent: hhVarPct,
+        hmPercent: hmVarPct,
+        ggfPercent: ggfVarPct,
+      },
+    },
+  };
+}
+
+/**
  * Calculates aggregated order totals and status dynamically across stages,
  * strictly consolidating HH (Hora Homem), HM (Hora Máquina), and GGF.
  */

@@ -375,6 +375,44 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     }
   };
 
+  // Set of OP IDs/Numbers that are already committed (empenhadas) elsewhere in the system
+  const availableForEmpenhoOrders = useMemo(() => {
+    // Collect all OP IDs / OP numbers that are empenhadas in ANY other order
+    const empenhadasIdsSet = new Set<string>();
+
+    existingOrders.forEach((order) => {
+      // Ignore the current order being edited
+      if (order.id === (initialOrder?.id || '')) return;
+
+      // If this order has a linkedOrder configured
+      if (order.linkedOrder && order.linkedOrder.linkedOpNumber) {
+        if (order.linkedOrder.linkedOrderId) {
+          empenhadasIdsSet.add(order.linkedOrder.linkedOrderId);
+        }
+        if (order.linkedOrder.linkedOpNumber) {
+          empenhadasIdsSet.add(order.linkedOrder.linkedOpNumber);
+        }
+        // The child order itself is also committed
+        empenhadasIdsSet.add(order.id);
+        empenhadasIdsSet.add(order.opNumber);
+      }
+    });
+
+    return existingOrders.filter((o) => {
+      // Cannot link to itself
+      if (o.id === (initialOrder?.id || '') || o.opNumber === (initialOrder?.opNumber || '')) {
+        return false;
+      }
+      // If it is the currently selected OP in this form session, keep it available so it doesn't disappear when opening edit
+      if (linkedOrderId && (o.id === linkedOrderId || o.opNumber === linkedOrderId)) {
+        return true;
+      }
+      // Otherwise, only include if NOT in the empenhadas set
+      const isAlreadyEmpenhada = empenhadasIdsSet.has(o.id) || empenhadasIdsSet.has(o.opNumber);
+      return !isAlreadyEmpenhada;
+    });
+  }, [existingOrders, initialOrder?.id, initialOrder?.opNumber, linkedOrderId]);
+
   // Build Linked Order Object
   const linkedOrderPayload: LinkedOrderInfo | undefined = isLinked && linkedOrderId ? {
     linkedOrderId,
@@ -630,11 +668,10 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                       checked={isLinked}
                       onChange={(e) => {
                         setIsLinked(e.target.checked);
-                        if (e.target.checked && !linkedOrderId && existingOrders.length > 0) {
-                          const candidate = existingOrders.find((o) => o.id !== (initialOrder?.id || ''));
-                          if (candidate) {
-                            setLinkedOrderId(candidate.id);
-                          }
+                        if (e.target.checked && !linkedOrderId && availableForEmpenhoOrders.length > 0) {
+                          setLinkedOrderId(availableForEmpenhoOrders[0]?.id || '');
+                        } else if (!e.target.checked) {
+                          setLinkedOrderId('');
                         }
                       }}
                       className="sr-only peer"
@@ -658,15 +695,21 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                         onChange={(e) => setLinkedOrderId(e.target.value)}
                         className="w-full bg-slate-900 border border-cyan-800/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
                       >
-                        <option value="">-- Selecione uma OP --</option>
-                        {existingOrders
-                          .filter((o) => o.id !== (initialOrder?.id || ''))
-                          .map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.opNumber} - {o.productName} ({o.bioreactorId} - {o.scaleName || `${o.batchVolumeLiters}L`})
-                            </option>
-                          ))}
+                        <option value="">
+                          {availableForEmpenhoOrders.length === 0 ? '-- Nenhuma OP disponível --' : '-- Selecione uma OP --'}
+                        </option>
+                        {availableForEmpenhoOrders.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.opNumber} - {o.productName} ({o.bioreactorId} - {o.scaleName || `${o.batchVolumeLiters}L`})
+                          </option>
+                        ))}
                       </select>
+                      {availableForEmpenhoOrders.length === 0 && (
+                        <p className="text-[10px] text-amber-400/90 mt-1 flex items-center gap-1 font-mono">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          Todas as demais OPs já foram empenhadas.
+                        </p>
+                      )}
                     </div>
 
                     {/* Relation Type */}
@@ -848,13 +891,23 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                       {/* Left: Stage Title and Info */}
                       <div className="lg:w-1/3">
-                        <div className="flex items-center space-x-2">
-                          <span className="w-5 h-5 rounded-full bg-slate-800 text-cyan-400 text-xs font-bold flex items-center justify-center">
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                          <span className="w-5 h-5 rounded-full bg-slate-800 text-cyan-400 text-xs font-bold flex items-center justify-center shrink-0">
                             {stageDef.sequence}
                           </span>
                           <span className="font-bold text-xs text-white">
                             {stageDef.label}
                           </span>
+                          {stageDef.id === 'abastecimento' && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-mono">
+                              Unificado com Preparo
+                            </span>
+                          )}
+                          {stageDef.id === 'preparo' && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800/60 font-mono">
+                              Unificado com Abastecimento
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-400 mt-1 line-clamp-1 ml-7">
                           {stageDef.description}
