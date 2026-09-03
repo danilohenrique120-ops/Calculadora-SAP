@@ -42,6 +42,7 @@ import {
   getMatchingScaleConfig,
   getProductStageCostBreakdown,
 } from '../utils/calculations';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface OrderFormModalProps {
   isOpen: boolean;
@@ -56,23 +57,76 @@ interface OrderFormModalProps {
   varianceThresholds?: VarianceThresholdConfig;
 }
 
-export const OrderFormModal: React.FC<OrderFormModalProps> = ({
+export const OrderFormModal: React.FC<OrderFormModalProps> = (props) => {
+  if (!props.isOpen) return null;
+
+  return (
+    <ErrorBoundary
+      fallbackTitle="Erro ao abrir formulário da Ordem"
+      fallbackMessage="Ocorreu uma inconsistência ao carregar os dados desta ordem. Clique no botão abaixo para fechar."
+      onReset={props.onClose}
+    >
+      <OrderFormModalInner {...props} />
+    </ErrorBoundary>
+  );
+};
+
+const OrderFormModalInner: React.FC<OrderFormModalProps> = ({
   isOpen,
   onClose,
   onSave,
   initialOrder,
-  existingOrders,
+  existingOrders = [],
   bioreactors = [],
   operators = [],
   products = [],
-  driverRules,
+  driverRules = [],
   varianceThresholds,
 }) => {
+  const availableBioreactors = (Array.isArray(bioreactors) && bioreactors.length > 0)
+    ? bioreactors
+    : [
+        { id: '1', code: 'BIO-100', name: 'Biorreator 100L', capacityLiters: 100, scaleName: '100L', status: 'ativo' as const },
+        { id: '2', code: 'BIO-500', name: 'Biorreator 500L', capacityLiters: 500, scaleName: '500L', status: 'ativo' as const },
+        { id: '3', code: 'BIO-3000', name: 'Biorreator 3000L', capacityLiters: 3000, scaleName: '3000L', status: 'ativo' as const },
+        { id: '4', code: 'BIO-5000', name: 'Biorreator 5000L', capacityLiters: 5000, scaleName: '5000L', status: 'ativo' as const },
+      ];
+
+  const availableOperators = (Array.isArray(operators) && operators.length > 0)
+    ? operators
+    : [
+        { id: '1', name: 'Carlos Silva', status: 'ativo' as const },
+        { id: '2', name: 'Fernanda Lima', status: 'ativo' as const },
+        { id: '3', name: 'Roberto Santos', status: 'ativo' as const },
+      ];
+
+  const availableProducts = (Array.isArray(products) && products.length > 0)
+    ? products
+    : [
+        {
+          id: 'p1',
+          name: 'Soja',
+          description: 'Inóculo para cultura de Soja',
+          volumeLiters: 5000,
+          scales: [
+            { scaleId: 'scale-100l', scaleName: '100L', volumeLiters: 100, stagesStandardMin: { setup: 35, abastecimento: 25, preparo: 50, inoculacao: 15, multiplicacao: 500 } },
+            { scaleId: 'scale-500l', scaleName: '500L', volumeLiters: 500, stagesStandardMin: { setup: 45, abastecimento: 35, preparo: 70, inoculacao: 20, multiplicacao: 600 } },
+            { scaleId: 'scale-3000l', scaleName: '3000L', volumeLiters: 3000, stagesStandardMin: { setup: 60, abastecimento: 45, preparo: 90, inoculacao: 30, multiplicacao: 720 } },
+            { scaleId: 'scale-5000l', scaleName: '5000L', volumeLiters: 5000, stagesStandardMin: { setup: 75, abastecimento: 60, preparo: 110, inoculacao: 42, multiplicacao: 750 } },
+          ],
+          stagesStandardMin: { setup: 60, abastecimento: 45, preparo: 90, inoculacao: 30, multiplicacao: 720 },
+        },
+      ];
+
+  const defaultBio = availableBioreactors[0]?.code || 'BIO-100';
+  const defaultOp = availableOperators[0]?.name || 'Carlos Silva';
+  const defaultProd = availableProducts[0]?.name || 'Soja';
+
   const [opNumber, setOpNumber] = useState('');
-  const [bioreactorId, setBioreactorId] = useState('');
-  const [prepDate, setPrepDate] = useState(new Date().toISOString().split('T')[0]);
-  const [operatorName, setOperatorName] = useState('');
-  const [productName, setProductName] = useState('');
+  const [bioreactorId, setBioreactorId] = useState(defaultBio);
+  const [prepDate, setPrepDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [operatorName, setOperatorName] = useState(defaultOp);
+  const [productName, setProductName] = useState(defaultProd);
   const [selectedScale, setSelectedScale] = useState<string>('5000L');
   const [batchVolumeLiters, setBatchVolumeLiters] = useState<number>(5000);
   const [status, setStatus] = useState<'em_andamento' | 'concluido' | 'cancelado'>('em_andamento');
@@ -89,62 +143,28 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     setup: { startTime: '', endTime: '', standardMin: 60 },
     abastecimento: { startTime: '', endTime: '', standardMin: 45 },
     preparo: { startTime: '', endTime: '', standardMin: 90 },
+    inoculacao: { startTime: '', endTime: '', standardMin: 30 },
     multiplicacao: { startTime: '', endTime: '', standardMin: 720 },
   });
 
-  const availableBioreactors = bioreactors.length > 0
-    ? bioreactors
-    : [
-        { id: '1', code: 'BIO-100', name: 'Biorreator 100L', capacityLiters: 100, scaleName: '100L', status: 'ativo' as const },
-        { id: '2', code: 'BIO-500', name: 'Biorreator 500L', capacityLiters: 500, scaleName: '500L', status: 'ativo' as const },
-        { id: '3', code: 'BIO-3000', name: 'Biorreator 3000L', capacityLiters: 3000, scaleName: '3000L', status: 'ativo' as const },
-        { id: '4', code: 'BIO-5000', name: 'Biorreator 5000L', capacityLiters: 5000, scaleName: '5000L', status: 'ativo' as const },
-      ];
-
-  const availableOperators = operators.length > 0
-    ? operators
-    : [
-        { id: '1', name: 'Carlos Silva', status: 'ativo' as const },
-        { id: '2', name: 'Fernanda Lima', status: 'ativo' as const },
-        { id: '3', name: 'Roberto Santos', status: 'ativo' as const },
-      ];
-
-  const availableProducts = products.length > 0
-    ? products
-    : [
-        {
-          id: 'p1',
-          name: 'Soja',
-          description: 'Inóculo para cultura de Soja',
-          volumeLiters: 5000,
-          scales: [
-            { scaleId: 'scale-100l', scaleName: '100L', volumeLiters: 100, stagesStandardMin: { setup: 35, abastecimento: 25, preparo: 50, multiplicacao: 500 } },
-            { scaleId: 'scale-500l', scaleName: '500L', volumeLiters: 500, stagesStandardMin: { setup: 45, abastecimento: 35, preparo: 70, multiplicacao: 600 } },
-            { scaleId: 'scale-3000l', scaleName: '3000L', volumeLiters: 3000, stagesStandardMin: { setup: 60, abastecimento: 45, preparo: 90, multiplicacao: 720 } },
-            { scaleId: 'scale-5000l', scaleName: '5000L', volumeLiters: 5000, stagesStandardMin: { setup: 75, abastecimento: 60, preparo: 110, multiplicacao: 750 } },
-          ],
-          stagesStandardMin: { setup: 60, abastecimento: 45, preparo: 90, multiplicacao: 720 },
-        },
-      ];
-
   const currentMatchedProduct =
     availableProducts.find(
-      (p) => p.name.trim().toLowerCase() === productName.trim().toLowerCase()
+      (p) => p && p.name && p.name.trim().toLowerCase() === (productName || '').trim().toLowerCase()
     ) || availableProducts[0];
 
   // Available scales for the selected product
   const availableScales = useMemo(() => {
-    if (currentMatchedProduct?.scales && currentMatchedProduct.scales.length > 0) {
+    if (currentMatchedProduct?.scales && Array.isArray(currentMatchedProduct.scales) && currentMatchedProduct.scales.length > 0) {
       return currentMatchedProduct.scales.map((s) => {
-        const total = Object.values(s.stagesStandardMin || {}).reduce<number>(
+        const total = Object.values(s?.stagesStandardMin || {}).reduce<number>(
           (acc, val) => acc + (Number(val) || 0),
           0
         );
         return {
-          id: s.scaleId || s.scaleName,
-          name: s.scaleName,
-          volumeLiters: s.volumeLiters,
-          standards: s.stagesStandardMin,
+          id: s?.scaleId || s?.scaleName || 'scale-default',
+          name: s?.scaleName || '5000L',
+          volumeLiters: typeof s?.volumeLiters === 'number' ? s.volumeLiters : 5000,
+          standards: s?.stagesStandardMin || {},
           totalStandardMin: total,
         };
       });
@@ -154,40 +174,42 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
         id: 'scale-100',
         name: '100L',
         volumeLiters: 100,
-        standards: { setup: 30, abastecimento: 20, preparo: 40, multiplicacao: 360 },
-        totalStandardMin: 450,
+        standards: { setup: 30, abastecimento: 20, preparo: 40, inoculacao: 15, multiplicacao: 360 },
+        totalStandardMin: 465,
       },
       {
         id: 'scale-500',
         name: '500L',
         volumeLiters: 500,
-        standards: { setup: 45, abastecimento: 30, preparo: 60, multiplicacao: 480 },
-        totalStandardMin: 615,
+        standards: { setup: 45, abastecimento: 30, preparo: 60, inoculacao: 20, multiplicacao: 480 },
+        totalStandardMin: 635,
       },
       {
         id: 'scale-3000',
         name: '3000L',
         volumeLiters: 3000,
-        standards: { setup: 60, abastecimento: 45, preparo: 90, multiplicacao: 600 },
-        totalStandardMin: 795,
+        standards: { setup: 60, abastecimento: 45, preparo: 90, inoculacao: 30, multiplicacao: 600 },
+        totalStandardMin: 825,
       },
       {
         id: 'scale-5000',
         name: '5000L',
         volumeLiters: 5000,
-        standards: { setup: 75, abastecimento: 60, preparo: 120, multiplicacao: 720 },
-        totalStandardMin: 975,
+        standards: { setup: 75, abastecimento: 60, preparo: 120, inoculacao: 42, multiplicacao: 720 },
+        totalStandardMin: 1017,
       },
     ];
   }, [currentMatchedProduct]);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (initialOrder) {
-      setOpNumber(initialOrder.opNumber);
-      setBioreactorId(initialOrder.bioreactorId);
-      setPrepDate(initialOrder.prepDate);
-      setOperatorName(initialOrder.operatorName);
-      setProductName(initialOrder.productName);
+      setOpNumber(initialOrder.opNumber || '');
+      setBioreactorId(initialOrder.bioreactorId || defaultBio);
+      setPrepDate(initialOrder.prepDate || new Date().toISOString().split('T')[0]);
+      setOperatorName(initialOrder.operatorName || defaultOp);
+      setProductName(initialOrder.productName || defaultProd);
 
       // Determine initial scale
       const orderScale = initialOrder.scaleName || (initialOrder.batchVolumeLiters ? `${initialOrder.batchVolumeLiters}L` : '5000L');
@@ -202,9 +224,10 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
           : 'em_andamento'
       );
       setNotes(initialOrder.notes || '');
+
       // Load and normalize stages with standards
       const loadedStages = JSON.parse(JSON.stringify(initialOrder.stages || {}));
-      const currentProd = availableProducts.find((p) => p.name === initialOrder.productName) || availableProducts[0];
+      const currentProd = availableProducts.find((p) => p && p.name === initialOrder.productName) || availableProducts[0];
       const prodStds = getProductStandardForScale(currentProd, orderScale, PROCESS_STAGES);
 
       PROCESS_STAGES.forEach((st) => {
@@ -243,22 +266,23 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       }
     } else {
       // Auto-generate next OP number
-      const nextNum = existingOrders.length + 1;
+      const safeOrders = Array.isArray(existingOrders) ? existingOrders : [];
+      const nextNum = safeOrders.length + 1;
       const year = new Date().getFullYear();
       setOpNumber(`OP-${year}-${String(nextNum).padStart(3, '0')}`);
       setPrepDate(new Date().toISOString().split('T')[0]);
       
-      const defaultBio = availableBioreactors[0]?.code || 'BIO-5000';
-      const bioObj = availableBioreactors.find((b) => b.code === defaultBio);
-      const defaultOp = availableOperators[0]?.name || 'Carlos Silva';
-      const defaultProd = availableProducts[0];
+      const defBio = availableBioreactors[0]?.code || 'BIO-5000';
+      const bioObj = availableBioreactors.find((b) => b && b.code === defBio);
+      const defOp = availableOperators[0]?.name || 'Carlos Silva';
+      const defProd = availableProducts[0];
 
       const initialScale = bioObj?.scaleName || (bioObj?.capacityLiters ? `${bioObj.capacityLiters}L` : '5000L');
       const initialVol = bioObj?.capacityLiters || 5000;
 
-      setBioreactorId(defaultBio);
-      setOperatorName(defaultOp);
-      setProductName(defaultProd?.name || 'Soja');
+      setBioreactorId(defBio);
+      setOperatorName(defOp);
+      setProductName(defProd?.name || 'Soja');
       setSelectedScale(initialScale);
       setBatchVolumeLiters(initialVol);
       setStatus('em_andamento');
@@ -270,8 +294,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       setLinkedNotes('');
 
       // Pull standards directly configured for this product and scale
-      if (defaultProd) {
-        const stds = getProductStandardForScale(defaultProd, initialScale, PROCESS_STAGES);
+      if (defProd) {
+        const stds = getProductStandardForScale(defProd, initialScale, PROCESS_STAGES);
         const newStages: Record<ProcessStageId, StageRecord> = {} as Record<ProcessStageId, StageRecord>;
         PROCESS_STAGES.forEach((st) => {
           const stdMin = stds[st.id] ?? st.defaultStandardMin;
@@ -279,15 +303,13 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
             startTime: '',
             endTime: '',
             standardMin: stdMin,
-            setupCostBreakdown: getProductStageCostBreakdown(defaultProd, initialScale, st.id, stdMin),
+            setupCostBreakdown: getProductStageCostBreakdown(defProd, initialScale, st.id, stdMin),
           };
         });
         setStages(newStages);
       }
     }
   }, [initialOrder, isOpen, existingOrders]);
-
-  if (!isOpen) return null;
 
   const currentScaleConfig = getMatchingScaleConfig(currentMatchedProduct, selectedScale);
 
@@ -296,14 +318,17 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
    */
   const handleScaleSelect = (scaleName: string, volLiters?: number) => {
     setSelectedScale(scaleName);
-    const matchedScale = availableScales.find(
-      (s) => s.name.toLowerCase() === scaleName.toLowerCase() || s.id === scaleName
-    );
-    const parsedVol = parseInt(scaleName.replace(/\D/g, ''), 10);
+    const matchedScale = availableScales.find((s) => {
+      const sName = (s.name || '').toLowerCase();
+      const sId = (s.id || '').toLowerCase();
+      const target = (scaleName || '').toLowerCase();
+      return (sName !== '' && sName === target) || (sId !== '' && sId === target);
+    });
+    const parsedVol = parseInt(String(scaleName).replace(/\D/g, ''), 10);
     const vol = volLiters ?? matchedScale?.volumeLiters ?? (isNaN(parsedVol) ? 5000 : parsedVol);
     setBatchVolumeLiters(vol);
 
-    const prod = availableProducts.find((p) => p.name === productName) || availableProducts[0];
+    const prod = availableProducts.find((p) => p && p.name === productName) || availableProducts[0];
     const stds = getProductStandardForScale(prod, scaleName, PROCESS_STAGES);
     setStages((prev) => {
       const next: Record<ProcessStageId, StageRecord> = { ...prev };
@@ -321,7 +346,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   const handleBioreactorChange = (newBioCode: string) => {
     setBioreactorId(newBioCode);
-    const bio = availableBioreactors.find((b) => b.code === newBioCode);
+    const bio = availableBioreactors.find((b) => b && b.code === newBioCode);
     if (bio) {
       const targetScale = bio.scaleName || (bio.capacityLiters ? `${bio.capacityLiters}L` : selectedScale);
       handleScaleSelect(targetScale, bio.capacityLiters);
@@ -330,7 +355,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   const handleProductSelect = (selectedName: string) => {
     setProductName(selectedName);
-    const prod = availableProducts.find((p) => p.name === selectedName);
+    const prod = availableProducts.find((p) => p && p.name === selectedName);
     if (prod) {
       const stds = getProductStandardForScale(prod, selectedScale, PROCESS_STAGES);
       setStages((prev) => {
@@ -377,12 +402,13 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   // Set of OP IDs/Numbers that are already committed (empenhadas) elsewhere in the system
   const availableForEmpenhoOrders = useMemo(() => {
-    // Collect all OP IDs / OP numbers that are empenhadas in ANY other order
+    const safeOrders = Array.isArray(existingOrders) ? existingOrders : [];
     const empenhadasIdsSet = new Set<string>();
 
-    existingOrders.forEach((order) => {
+    safeOrders.forEach((order) => {
+      if (!order) return;
       // Ignore the current order being edited
-      if (order.id === (initialOrder?.id || '')) return;
+      if (initialOrder?.id && order.id === initialOrder.id) return;
 
       // If this order has a linkedOrder configured
       if (order.linkedOrder && order.linkedOrder.linkedOpNumber) {
@@ -393,14 +419,15 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
           empenhadasIdsSet.add(order.linkedOrder.linkedOpNumber);
         }
         // The child order itself is also committed
-        empenhadasIdsSet.add(order.id);
-        empenhadasIdsSet.add(order.opNumber);
+        if (order.id) empenhadasIdsSet.add(order.id);
+        if (order.opNumber) empenhadasIdsSet.add(order.opNumber);
       }
     });
 
-    return existingOrders.filter((o) => {
+    return safeOrders.filter((o) => {
+      if (!o) return false;
       // Cannot link to itself
-      if (o.id === (initialOrder?.id || '') || o.opNumber === (initialOrder?.opNumber || '')) {
+      if ((initialOrder?.id && o.id === initialOrder.id) || (initialOrder?.opNumber && o.opNumber === initialOrder.opNumber)) {
         return false;
       }
       // If it is the currently selected OP in this form session, keep it available so it doesn't disappear when opening edit
@@ -408,7 +435,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
         return true;
       }
       // Otherwise, only include if NOT in the empenhadas set
-      const isAlreadyEmpenhada = empenhadasIdsSet.has(o.id) || empenhadasIdsSet.has(o.opNumber);
+      const isAlreadyEmpenhada = (o.id && empenhadasIdsSet.has(o.id)) || (o.opNumber && empenhadasIdsSet.has(o.opNumber));
       return !isAlreadyEmpenhada;
     });
   }, [existingOrders, initialOrder?.id, initialOrder?.opNumber, linkedOrderId]);
@@ -416,7 +443,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   // Build Linked Order Object
   const linkedOrderPayload: LinkedOrderInfo | undefined = isLinked && linkedOrderId ? {
     linkedOrderId,
-    linkedOpNumber: existingOrders.find((o) => o.id === linkedOrderId || o.opNumber === linkedOrderId)?.opNumber || linkedOrderId,
+    linkedOpNumber: (existingOrders || []).find((o) => o && (o.id === linkedOrderId || o.opNumber === linkedOrderId))?.opNumber || linkedOrderId,
     relationType: linkedRelationType,
     volumeLiters: linkedVolumeLiters !== '' ? Number(linkedVolumeLiters) : undefined,
     notes: linkedNotes.trim() || undefined,
@@ -440,21 +467,38 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     updatedAt: new Date().toISOString(),
   };
 
-  const totals = calcOrderTotals(previewOrder, driverRules, varianceThresholds);
+  const totals = useMemo(() => {
+    try {
+      return calcOrderTotals(previewOrder, driverRules, varianceThresholds);
+    } catch (err) {
+      console.error('Error in calcOrderTotals:', err);
+      return {
+        totalRealMin: 0,
+        totalStandardMin: 0,
+        totalVarianceMin: 0,
+        totalVariancePercent: 0,
+        overallStatus: 'pending' as const,
+        completedStagesCount: 0,
+        totalStagesCount: 5,
+        hasBottleneck: false,
+        criticalVarianceMin: 0,
+      };
+    }
+  }, [previewOrder, driverRules, varianceThresholds]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!opNumber.trim()) return;
 
-    const newOrder: ProductionOrder = {
+    const orderToSave: ProductionOrder = {
       id: initialOrder?.id || `ord-${Date.now()}`,
       opNumber: opNumber.trim(),
-      bioreactorId: bioreactorId || availableBioreactors[0]?.code || 'BIO-100',
+      bioreactorId,
       prepDate,
-      operatorName: operatorName || availableOperators[0]?.name || 'Operador',
-      productName: productName || availableProducts[0]?.name || 'Produto',
+      operatorName,
+      productName,
       scaleName: selectedScale,
-      batchVolumeLiters: Number(batchVolumeLiters) || 0,
+      batchVolumeLiters,
       linkedOrder: linkedOrderPayload,
       status,
       notes: notes.trim(),
@@ -463,50 +507,54 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    onSave(newOrder);
+    onSave(orderToSave);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-slate-900 border border-slate-750 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Modal Header */}
-        <div className="px-6 py-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70 shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center">
-              <Layers className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <FlaskConical className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white tracking-tight">
-                {initialOrder ? `Editar Ordem de Produção ${initialOrder.opNumber}` : 'Nova Ordem de Produção (Biorreator)'}
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>{initialOrder ? `Editar Ordem ${initialOrder.opNumber}` : 'Nova Ordem de Produção (OP)'}</span>
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/80">
+                  {selectedScale}
+                </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Selecione a escala para carregar os tempos standards e aponte os horários de cada etapa.
+                Lançamento de horários, cálculo automático de tempos e direcionadores HH, HM e GGF
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Section 1: Header / Metadados */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto flex-1 text-slate-200">
+          {/* Section 1: Header / Batch Info */}
           <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
-              <FlaskConical className="w-4 h-4" />
-              1. Cabeçalho da Ordem de Produção
+              <Sliders className="w-4 h-4" />
+              1. Identificação da Batelada & Equipamentos
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               {/* OP Number */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Número da Ordem (OP) <span className="text-rose-400">*</span>
+                  Número da OP <span className="text-rose-400">*</span>
                 </label>
                 <input
                   type="text"
@@ -514,86 +562,116 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   value={opNumber}
                   onChange={(e) => setOpNumber(e.target.value)}
                   placeholder="ex: OP-2026-001"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono-num focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
                 />
               </div>
 
-              {/* Bioreactor ID */}
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  ID do Biorreator <span className="text-rose-400">*</span>
-                </label>
-                <select
-                  value={bioreactorId}
-                  onChange={(e) => handleBioreactorChange(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-cyan-500"
-                >
-                  {availableBioreactors.map((bio) => (
-                    <option key={bio.id || bio.code} value={bio.code}>
-                      {bio.code} {bio.name ? `- ${bio.name} (${bio.capacityLiters} L)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Preparation Date */}
+              {/* Prep Date */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
                   Data de Preparo <span className="text-rose-400">*</span>
                 </label>
-                <input
-                  type="date"
-                  required
-                  value={prepDate}
-                  onChange={(e) => setPrepDate(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    required
+                    value={prepDate}
+                    onChange={(e) => setPrepDate(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Bioreactor */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Biorreator <span className="text-rose-400">*</span>
+                </label>
+                <select
+                  value={bioreactorId}
+                  onChange={(e) => handleBioreactorChange(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none font-mono"
+                >
+                  {availableBioreactors.map((bio) => (
+                    <option key={bio.id || bio.code} value={bio.code}>
+                      {bio.code} - {bio.name} ({bio.capacityLiters}L)
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Operator */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Nome do Operador <span className="text-rose-400">*</span>
+                  Operador Responsável <span className="text-rose-400">*</span>
                 </label>
                 <select
                   value={operatorName}
                   onChange={(e) => setOperatorName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none"
                 >
                   {availableOperators.map((op) => (
                     <option key={op.id || op.name} value={op.name}>
-                      {op.name} {op.role ? `(${op.role})` : ''}
+                      {op.name}
                     </option>
                   ))}
                 </select>
               </div>
-            </div>
 
-            {/* Product Selection */}
-            <div className="pt-2 border-t border-slate-800/80">
-              <div>
+              {/* Product */}
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Nome do Produto / Formulado <span className="text-rose-400">*</span>
+                  Produto / Inóculo <span className="text-rose-400">*</span>
                 </label>
                 <select
                   value={productName}
                   onChange={(e) => handleProductSelect(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 font-medium"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none"
                 >
                   {availableProducts.map((p) => (
-                    <option key={p.id} value={p.name}>
-                      {p.name} {p.description ? `- ${p.description}` : ''}
+                    <option key={p.id || p.name} value={p.name}>
+                      {p.name} {p.description ? `(${p.description})` : ''}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Status da Ordem
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as 'em_andamento' | 'concluido' | 'cancelado')}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none font-medium"
+                >
+                  <option value="em_andamento">Em Andamento</option>
+                  <option value="concluido">Concluído</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+
+              {/* Target Volume */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Volume Útil da Batelada (L)
+                </label>
+                <input
+                  type="number"
+                  value={batchVolumeLiters}
+                  onChange={(e) => setBatchVolumeLiters(Number(e.target.value) || 0)}
+                  placeholder="5000"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
             </div>
 
-            {/* Scale Selection & Engineering Standards Auto-Sync */}
-            <div className="bg-slate-900/90 p-3.5 rounded-xl border border-cyan-900/40 space-y-3 mt-1">
+            {/* Scale Selector Chips (Rule 2: Dynamic Standards by Scale) */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <label className="block text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                     <Gauge className="w-4 h-4 text-cyan-400" />
                     Escala de Produção da Batelada <span className="text-rose-400">*</span>
                   </label>
@@ -611,15 +689,19 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               {/* Interactive Scale Chips */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                 {availableScales.map((scale) => {
+                  const scaleNameStr = (scale.name || '').toLowerCase();
+                  const scaleIdStr = (scale.id || '').toLowerCase();
+                  const selectedStr = (selectedScale || '').toLowerCase();
                   const isSelected =
-                    selectedScale.toLowerCase() === scale.name.toLowerCase() ||
-                    selectedScale.toLowerCase() === scale.id.toLowerCase();
+                    (scaleNameStr !== '' && selectedStr === scaleNameStr) ||
+                    (scaleIdStr !== '' && selectedStr === scaleIdStr);
+
                   return (
                     <button
                       key={scale.id || scale.name}
                       type="button"
                       onClick={() => handleScaleSelect(scale.name, scale.volumeLiters)}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                      className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                         isSelected
                           ? 'bg-gradient-to-r from-cyan-950/90 to-blue-950/90 border-cyan-500 ring-2 ring-cyan-500/40 text-white shadow-lg shadow-cyan-950/50'
                           : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-900'
@@ -758,7 +840,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
                     {/* Live Variations Breakdown of Selected Parent Order */}
                     {(() => {
-                      const selectedParent = existingOrders.find((o) => o.id === linkedOrderId || o.opNumber === linkedOrderId);
+                      const selectedParent = (existingOrders || []).find((o) => o && (o.id === linkedOrderId || o.opNumber === linkedOrderId));
                       if (!selectedParent) return null;
                       const pTotals = calcOrderTotals(selectedParent, driverRules, varianceThresholds);
                       const pTheme = getStatusTheme(pTotals.overallStatus);
@@ -789,7 +871,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                           {/* Stage variations cards for parent */}
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                             {PROCESS_STAGES.map((s) => {
-                              const st = selectedParent.stages[s.id];
+                              const st = selectedParent.stages ? selectedParent.stages[s.id] : undefined;
                               const m = calcStageMetrics(
                                 st,
                                 selectedParent.prepDate,
@@ -942,7 +1024,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                           <button
                             type="button"
                             onClick={() => stampNow(stageDef.id, 'start')}
-                            className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded text-[10px] font-mono font-semibold"
+                            className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded text-[10px] font-mono font-semibold cursor-pointer"
                             title="Preencher data e hora atual"
                           >
                             Agora
@@ -977,7 +1059,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                           <button
                             type="button"
                             onClick={() => stampNow(stageDef.id, 'end')}
-                            className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded text-[10px] font-mono font-semibold"
+                            className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded text-[10px] font-mono font-semibold cursor-pointer"
                             title="Preencher data e hora atual"
                           >
                             Agora
@@ -1129,13 +1211,13 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-cyan-500/25"
+              className="flex items-center space-x-2 px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-cyan-500/25 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{initialOrder ? 'Salvar Alterações da OP' : 'Criar Ordem de Produção'}</span>

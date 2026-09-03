@@ -32,6 +32,7 @@ interface HeaderProps {
   onResetData: () => void;
   onOpenPresets: () => void;
   isAuthenticatedAdmin?: boolean;
+  isCloudConnected?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({

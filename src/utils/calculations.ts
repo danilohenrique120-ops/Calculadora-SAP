@@ -1486,30 +1486,35 @@ export function getMatchingScaleConfig(
   product: ProductPreset | undefined,
   scaleIdentifier: string | number
 ): ScaleStandardConfig | null {
-  if (!product || !product.scales || product.scales.length === 0) {
+  if (!product || !product.scales || !Array.isArray(product.scales) || product.scales.length === 0) {
     return null;
   }
 
-  const strId = String(scaleIdentifier).trim().toLowerCase();
+  const strId = String(scaleIdentifier ?? '').trim().toLowerCase();
   const numVol = typeof scaleIdentifier === 'number' ? scaleIdentifier : parseInt(strId.replace(/\D/g, ''), 10);
 
   // 1. Exact or normalized scale name/id match (e.g. "100L", "500L", "3000L", "5000L", "scale-100")
-  const exactNameMatch = product.scales.find(
-    (s) =>
-      s.scaleName.toLowerCase() === strId ||
-      s.scaleId.toLowerCase() === strId ||
-      s.scaleName.toLowerCase().replace(/\s+/g, '') === strId.replace(/\s+/g, '') ||
-      s.scaleName.toLowerCase().replace(/[^0-9a-z]/g, '') === strId.replace(/[^0-9a-z]/g, '')
-  );
+  const exactNameMatch = product.scales.find((s) => {
+    if (!s) return false;
+    const sName = (s.scaleName || '').trim().toLowerCase();
+    const sId = (s.scaleId || '').trim().toLowerCase();
+    return (
+      (sName !== '' && sName === strId) ||
+      (sId !== '' && sId === strId) ||
+      (sName !== '' && sName.replace(/\s+/g, '') === strId.replace(/\s+/g, '')) ||
+      (sName !== '' && sName.replace(/[^0-9a-z]/g, '') === strId.replace(/[^0-9a-z]/g, ''))
+    );
+  });
   if (exactNameMatch) return exactNameMatch;
 
   // 2. Exact volume match
   if (!isNaN(numVol) && numVol > 0) {
-    const exactVolMatch = product.scales.find((s) => s.volumeLiters === numVol);
+    const exactVolMatch = product.scales.find((s) => s && s.volumeLiters === numVol);
     if (exactVolMatch) return exactVolMatch;
 
     // 3. Match if scaleName contains the numeric digits
     const nameNumMatch = product.scales.find((s) => {
+      if (!s || !s.scaleName) return false;
       const parsed = parseInt(s.scaleName.replace(/\D/g, ''), 10);
       return !isNaN(parsed) && parsed === numVol;
     });
@@ -1519,13 +1524,15 @@ export function getMatchingScaleConfig(
     let closest = product.scales[0];
     let minDiff = Infinity;
     for (const scale of product.scales) {
-      const diff = Math.abs(scale.volumeLiters - numVol);
+      if (!scale) continue;
+      const vol = typeof scale.volumeLiters === 'number' ? scale.volumeLiters : 0;
+      const diff = Math.abs(vol - numVol);
       if (diff < minDiff) {
         minDiff = diff;
         closest = scale;
       }
     }
-    return closest;
+    return closest || null;
   }
 
   return product.scales[0] || null;
@@ -1540,8 +1547,10 @@ export function getProductStandardForScale(
   allStages: StageDefinition[] = PROCESS_STAGES
 ): Record<string, number> {
   const defaultFallback: Record<string, number> = {};
-  allStages.forEach((st) => {
-    defaultFallback[st.id] = st.defaultStandardMin;
+  (allStages || PROCESS_STAGES).forEach((st) => {
+    if (st && st.id) {
+      defaultFallback[st.id] = st.defaultStandardMin || 60;
+    }
   });
 
   if (!product) return defaultFallback;
@@ -1549,19 +1558,24 @@ export function getProductStandardForScale(
   const matchedScale = getMatchingScaleConfig(product, scaleIdentifier);
   if (matchedScale && matchedScale.stagesStandardMin) {
     const result: Record<string, number> = {};
-    allStages.forEach((st) => {
-      result[st.id] =
-        matchedScale.stagesStandardMin[st.id] ??
-        product.stagesStandardMin?.[st.id] ??
-        st.defaultStandardMin;
+    (allStages || PROCESS_STAGES).forEach((st) => {
+      if (st && st.id) {
+        result[st.id] =
+          matchedScale.stagesStandardMin[st.id] ??
+          product.stagesStandardMin?.[st.id] ??
+          st.defaultStandardMin ??
+          60;
+      }
     });
     return result;
   }
 
   if (product.stagesStandardMin) {
     const result: Record<string, number> = {};
-    allStages.forEach((st) => {
-      result[st.id] = product.stagesStandardMin?.[st.id] ?? st.defaultStandardMin;
+    (allStages || PROCESS_STAGES).forEach((st) => {
+      if (st && st.id) {
+        result[st.id] = product.stagesStandardMin?.[st.id] ?? st.defaultStandardMin ?? 60;
+      }
     });
     return result;
   }
@@ -1646,12 +1660,18 @@ export function ensureAllProductScales(
 
   // Map each standard scale to its existing or default configuration
   const result: ScaleStandardConfig[] = availableScales.map((scaleDef) => {
-    const match = existingScales.find(
-      (s) =>
-        s.scaleName.toLowerCase() === scaleDef.name.toLowerCase() ||
-        s.scaleId.toLowerCase() === scaleDef.id.toLowerCase() ||
-        s.scaleName.toLowerCase().replace(/[^0-9a-z]/g, '') === scaleDef.name.toLowerCase().replace(/[^0-9a-z]/g, '')
-    );
+    const match = existingScales.find((s) => {
+      if (!s) return false;
+      const sName = (s.scaleName || '').toLowerCase();
+      const sId = (s.scaleId || '').toLowerCase();
+      const defName = (scaleDef?.name || '').toLowerCase();
+      const defId = (scaleDef?.id || '').toLowerCase();
+      return (
+        (sName !== '' && sName === defName) ||
+        (sId !== '' && sId === defId) ||
+        (sName !== '' && sName.replace(/[^0-9a-z]/g, '') === defName.replace(/[^0-9a-z]/g, ''))
+      );
+    });
 
     const stagesMin = {
       setup: match?.stagesStandardMin?.setup ?? (scaleDef.volumeLiters <= 100 ? 30 : scaleDef.volumeLiters <= 500 ? 45 : scaleDef.volumeLiters <= 3000 ? 60 : 75),
@@ -1704,7 +1724,9 @@ export function ensureAllProductScales(
 
   // Preserve any additional custom scales beyond the standard 4
   existingScales.forEach((es) => {
-    if (!result.some((r) => r.scaleName.toLowerCase() === es.scaleName.toLowerCase())) {
+    if (!es || !es.scaleName) return;
+    const esName = es.scaleName.toLowerCase();
+    if (!result.some((r) => (r.scaleName || '').toLowerCase() === esName)) {
       result.push(es);
     }
   });

@@ -274,7 +274,9 @@ export const StageCell: React.FC<StageCellProps> = ({
               {hasDateDiff ? formatTimeDisplay(record?.endDate, record?.endTime) : record?.endTime}
             </span>
             {metrics.isOvernight && !metrics.isMultiDay && (
-              <Moon className="w-2.5 h-2.5 text-indigo-400 shrink-0" title="Virada de meia-noite" />
+              <span title="Virada de meia-noite">
+                <Moon className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+              </span>
             )}
           </div>
 

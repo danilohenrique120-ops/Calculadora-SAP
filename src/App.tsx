@@ -18,6 +18,7 @@ import {
 } from './utils/calculations';
 import { ConfirmModal } from './components/ConfirmModal';
 import { PasswordModal } from './components/PasswordModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { CheckCircle2 } from 'lucide-react';
 import {
   seedDatabaseIfEmpty,
@@ -409,60 +410,62 @@ export default function App() {
 
       {/* Main View Container */}
       <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-5">
-        {activeTab === 'grid' && (
-          <OperationalGrid
-            orders={orders}
-            onUpdateOrder={handleUpdateOrder}
-            onDeleteOrder={handleDeleteOrder}
-            onDuplicateOrder={handleDuplicateOrder}
-            onEditOrderModal={handleOpenEditOrder}
-            onNewOrder={handleOpenNewOrder}
-            bioreactors={bioreactors}
-            operators={operators}
-            products={presets}
-            driverRules={driverRules}
-            varianceThresholds={varianceThresholds}
-          />
-        )}
+        <ErrorBoundary fallbackTitle="Erro ao carregar visualização">
+          {activeTab === 'grid' && (
+            <OperationalGrid
+              orders={orders}
+              onUpdateOrder={handleUpdateOrder}
+              onDeleteOrder={handleDeleteOrder}
+              onDuplicateOrder={handleDuplicateOrder}
+              onEditOrderModal={handleOpenEditOrder}
+              onNewOrder={handleOpenNewOrder}
+              bioreactors={bioreactors}
+              operators={operators}
+              products={presets}
+              driverRules={driverRules}
+              varianceThresholds={varianceThresholds}
+            />
+          )}
 
-        {activeTab === 'analytics' && (
-          <AnalyticsDashboard
-            orders={orders}
-            bioreactors={bioreactors}
-            operators={operators}
-            products={presets}
-            driverRules={driverRules}
-            varianceThresholds={varianceThresholds}
-          />
-        )}
+          {activeTab === 'analytics' && (
+            <AnalyticsDashboard
+              orders={orders}
+              bioreactors={bioreactors}
+              operators={operators}
+              products={presets}
+              driverRules={driverRules}
+              varianceThresholds={varianceThresholds}
+            />
+          )}
 
-        {activeTab === 'cadastros' && (
-          <RegistrationManager
-            bioreactors={bioreactors}
-            operators={operators}
-            products={presets}
-            onUpdateBioreactors={handleUpdateBioreactors}
-            onUpdateOperators={handleUpdateOperators}
-            onUpdateProducts={handleUpdateProducts}
-          />
-        )}
+          {activeTab === 'cadastros' && (
+            <RegistrationManager
+              bioreactors={bioreactors}
+              operators={operators}
+              products={presets}
+              onUpdateBioreactors={handleUpdateBioreactors}
+              onUpdateOperators={handleUpdateOperators}
+              onUpdateProducts={handleUpdateProducts}
+            />
+          )}
 
-        {activeTab === 'standards' && (
-          <StandardsManager
-            presets={presets}
-            onUpdatePresets={handleUpdateProducts}
-            bioreactors={bioreactors}
-          />
-        )}
+          {activeTab === 'standards' && (
+            <StandardsManager
+              presets={presets}
+              onUpdatePresets={handleUpdateProducts}
+              bioreactors={bioreactors}
+            />
+          )}
 
-        {activeTab === 'drivers' && (
-          <CostDriverRulesManager
-            driverRules={driverRules}
-            onUpdateDriverRules={handleUpdateDriverRules}
-            varianceThresholds={varianceThresholds}
-            onUpdateVarianceThresholds={handleUpdateVarianceThresholds}
-          />
-        )}
+          {activeTab === 'drivers' && (
+            <CostDriverRulesManager
+              driverRules={driverRules}
+              onUpdateDriverRules={handleUpdateDriverRules}
+              varianceThresholds={varianceThresholds}
+              onUpdateVarianceThresholds={handleUpdateVarianceThresholds}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Order Modal (Create / Edit) */}
