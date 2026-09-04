@@ -17,6 +17,9 @@ import {
   Lock,
   Unlock,
   ChevronDown,
+  Cloud,
+  CloudOff,
+  Share2,
 } from 'lucide-react';
 import { ProductionOrder } from '../types';
 import { calcOrderTotals } from '../utils/calculations';
@@ -34,6 +37,7 @@ interface HeaderProps {
   isAuthenticatedAdmin?: boolean;
   onLockAdmin?: () => void;
   isCloudConnected?: boolean;
+  onShareLink?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -49,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   isAuthenticatedAdmin = false,
   onLockAdmin,
   isCloudConnected = true,
+  onShareLink,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
@@ -77,16 +82,11 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Quick stats for top pill (safe against undefined, null, or malformed items)
-  const safeOrders = Array.isArray(orders) ? orders.filter((o): o is ProductionOrder => Boolean(o && typeof o === 'object')) : [];
-  const activeOrdersCount = safeOrders.filter((o) => (o.status || 'em_andamento') === 'em_andamento').length;
-  const criticalOrdersCount = safeOrders.filter((o) => {
-    try {
-      const t = calcOrderTotals(o);
-      return Boolean(t && (t.hasBottleneck || t.overallStatus === 'critical'));
-    } catch {
-      return false;
-    }
+  // Quick stats for top pill
+  const activeOrdersCount = orders.filter((o) => o.status === 'em_andamento').length;
+  const criticalOrdersCount = orders.filter((o) => {
+    const t = calcOrderTotals(o);
+    return t.hasBottleneck || t.overallStatus === 'critical';
   }).length;
 
   return (
@@ -107,23 +107,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded">
                   v4.0
                 </span>
-                {isCloudConnected ? (
-                  <span
-                    className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 rounded-full"
-                    title="Conectado ao Firebase Firestore em Tempo Real"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="hidden sm:inline">Tempo Real</span>
-                  </span>
-                ) : (
-                  <span
-                    className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium bg-amber-950/60 border border-amber-500/30 text-amber-400 rounded-full"
-                    title="Conectando à nuvem..."
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                    <span>Conectando...</span>
-                  </span>
-                )}
               </div>
               <p className="text-xs text-slate-400">
                 Cálculo de Tempos, Critérios de Custos (HH/HM/GGF) & Desvios de Produção
@@ -219,6 +202,52 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Quick Action Buttons */}
           <div className="flex items-center space-x-2">
+            {/* Realtime Cloud Sync Indicator */}
+            <div
+              id="cloud-sync-status-badge"
+              className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all ${
+                isCloudConnected
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                  : 'bg-amber-950/40 border-amber-500/30 text-amber-300'
+              }`}
+              title={
+                isCloudConnected
+                  ? 'Nuvem Conectada: Todas as informações adicionadas são sincronizadas em tempo real entre todos os navegadores e computadores.'
+                  : 'Modo Offline: Reconectando à nuvem Firestore...'
+              }
+            >
+              {isCloudConnected ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="hidden xl:inline font-semibold">Nuvem em Tempo Real</span>
+                  <span className="xl:hidden font-semibold">Nuvem OK</span>
+                </>
+              ) : (
+                <>
+                  <CloudOff className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span className="hidden xl:inline font-semibold">Offline / Local</span>
+                  <span className="xl:hidden font-semibold">Offline</span>
+                </>
+              )}
+            </div>
+
+            {/* Share Link Button */}
+            {onShareLink && (
+              <button
+                id="header-share-link-btn"
+                type="button"
+                onClick={onShareLink}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-850 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 hover:border-cyan-500/50 rounded-lg text-xs font-medium transition cursor-pointer shadow-sm"
+                title="Copiar link do sistema para acessar de outros computadores ou navegadores"
+              >
+                <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden md:inline">Compartilhar Link</span>
+              </button>
+            )}
+
             {/* Lock Admin Button if currently unlocked */}
             {isAuthenticatedAdmin && onLockAdmin && (
               <button

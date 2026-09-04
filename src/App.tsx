@@ -11,7 +11,6 @@ import { INITIAL_MOCK_ORDERS, PRODUCT_PRESETS, INITIAL_BIOREACTORS, INITIAL_OPER
 import { exportOrdersToCSV, exportOrdersToJSON } from './utils/export';
 import {
   normalizeProductPresets,
-  normalizeProductionOrder,
   getStoredCostDriverRules,
   saveStoredCostDriverRules,
   getStoredVarianceThresholds,
@@ -31,8 +30,6 @@ import {
   subscribeToVarianceThresholds,
   dbSaveOrder,
   dbDeleteOrder,
-  dbClearAllOrders,
-  syncLocalOrdersToCloudIfMissing,
   syncAllBioreactors,
   syncAllOperators,
   syncAllPresets,
@@ -101,20 +98,15 @@ export default function App() {
     showToast('Painéis administrativos bloqueados com sucesso!', 'info');
   };
 
-  // Orders State (Pure single source of truth from Firestore with normalized schema)
+  // Orders State
   const [orders, setOrders] = useState<ProductionOrder[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ORDERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(normalizeProductionOrder);
-        }
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to load cached orders', e);
+      console.error('Failed to load orders', e);
     }
-    return [];
+    return INITIAL_MOCK_ORDERS;
   });
 
   // Presets / Products State (always normalized to guarantee all scales exist)
@@ -177,23 +169,16 @@ export default function App() {
     let unsubscribeRules: (() => void) | undefined;
     let unsubscribeThresholds: (() => void) | undefined;
 
-    const initFirebase = () => {
+    const initFirebase = async () => {
       try {
+        await seedDatabaseIfEmpty();
         setIsCloudConnected(true);
-
-        // Run baseline seed in background if uninitialized, without blocking listeners
-        seedDatabaseIfEmpty().catch((err) => console.error('Cloud seed background error:', err));
 
         unsubscribeOrders = subscribeToOrders(
           (cloudOrders) => {
             if (Array.isArray(cloudOrders)) {
-              const normalized = cloudOrders.map(normalizeProductionOrder);
-              setOrders(normalized);
-              try {
-                localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(normalized));
-              } catch {}
+              setOrders(cloudOrders);
             }
-            setIsCloudConnected(true);
           },
           (err) => {
             console.error('Orders sync error:', err);
@@ -317,49 +302,46 @@ export default function App() {
 
   // Order Handlers
   const handleSaveOrder = async (savedOrder: ProductionOrder) => {
-    const normalized = normalizeProductionOrder(savedOrder);
     setOrders((prev) => {
-      const existsIndex = prev.findIndex((o) => o.id === normalized.id);
+      const existsIndex = prev.findIndex((o) => o.id === savedOrder.id);
       if (existsIndex >= 0) {
         const next = [...prev];
-        next[existsIndex] = normalized;
+        next[existsIndex] = savedOrder;
         return next;
       }
-      return [normalized, ...prev];
+      return [savedOrder, ...prev];
     });
 
     try {
-      await dbSaveOrder(normalized);
-      setIsCloudConnected(true);
-      showToast(`Ordem de Produção ${normalized.opNumber} salva e sincronizada na nuvem!`);
+      await dbSaveOrder(savedOrder);
+      showToast(`Ordem ${savedOrder.opNumber} salva e sincronizada na nuvem!`);
     } catch (err: any) {
       console.error('Error saving order to Firestore:', err);
-      setIsCloudConnected(false);
-      showToast(`Erro ao salvar na nuvem: ${err?.message || 'Verifique sua conexão'}`, 'info');
+      showToast('Aviso: Salva localmente, mas houve erro ao sincronizar com a nuvem.', 'info');
     }
   };
 
   const handleUpdateOrder = async (updatedOrder: ProductionOrder) => {
-    const normalized = normalizeProductionOrder(updatedOrder);
-    setOrders((prev) => prev.map((o) => (o.id === normalized.id ? normalized : o)));
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
     try {
-      await dbSaveOrder(normalized);
-      setIsCloudConnected(true);
-    } catch (err: any) {
+      await dbSaveOrder(updatedOrder);
+    } catch (err) {
       console.error('Error updating order to Firestore:', err);
-      setIsCloudConnected(false);
     }
   };
 
-  const handleDeleteOrder = (id: string) => {
+  const handleDeleteOrder = async (id: string) => {
     setOrders((prev) => prev.filter((o) => o.id !== id));
-    dbDeleteOrder(id).catch((err) => {
+    try {
+      await dbDeleteOrder(id);
+      showToast('Ordem de produção excluída da nuvem.', 'info');
+    } catch (err) {
       console.error('Error deleting order from Firestore:', err);
-    });
-    showToast('Ordem de produção excluída da nuvem.', 'info');
+      showToast('Aviso: Erro ao excluir da nuvem.', 'info');
+    }
   };
 
-  const handleDuplicateOrder = (sourceOrder: ProductionOrder) => {
+  const handleDuplicateOrder = async (sourceOrder: ProductionOrder) => {
     const nextNum = orders.length + 1;
     const year = new Date().getFullYear();
     const duplicated: ProductionOrder = {
@@ -373,10 +355,22 @@ export default function App() {
       notes: `Duplicada a partir de ${sourceOrder.opNumber}`,
     };
     setOrders((prev) => [duplicated, ...prev]);
-    dbSaveOrder(duplicated).catch((err) => {
+    try {
+      await dbSaveOrder(duplicated);
+      showToast(`Ordem duplicada com sucesso como ${duplicated.opNumber}!`);
+    } catch (err) {
       console.error('Error saving duplicated order:', err);
-    });
-    showToast(`Ordem duplicada com sucesso como ${duplicated.opNumber}!`);
+      showToast('Aviso: Criada localmente, erro ao salvar na nuvem.', 'info');
+    }
+  };
+
+  const handleShareLink = () => {
+    try {
+      navigator.clipboard.writeText(window.location.href);
+      showToast('Link copiado! Envie este endereço para abrir em outros computadores.');
+    } catch {
+      showToast('Copie o endereço da barra do seu navegador para compartilhar.', 'info');
+    }
   };
 
   const handleOpenNewOrder = () => {
@@ -425,22 +419,21 @@ export default function App() {
       )}
 
       {/* Top Header & SCADA Navigation */}
-      <ErrorBoundary fallbackTitle="Erro ao carregar cabeçalho">
-        <Header
-          activeTab={activeTab}
-          setActiveTab={handleTabSelect}
-          orders={orders}
-          isAuthenticatedAdmin={isAuthenticatedAdmin}
-          onLockAdmin={handleLockAdmin}
-          isCloudConnected={isCloudConnected}
-          onNewOrder={handleOpenNewOrder}
-          onExportCSV={handleExportCSV}
-          onExportJSON={handleExportJSON}
-          onLoadMockData={handleLoadMockData}
-          onResetData={handleResetData}
-          onOpenPresets={() => handleTabSelect('standards')}
-        />
-      </ErrorBoundary>
+      <Header
+        activeTab={activeTab}
+        setActiveTab={handleTabSelect}
+        orders={orders}
+        isAuthenticatedAdmin={isAuthenticatedAdmin}
+        onLockAdmin={handleLockAdmin}
+        isCloudConnected={isCloudConnected}
+        onShareLink={handleShareLink}
+        onNewOrder={handleOpenNewOrder}
+        onExportCSV={handleExportCSV}
+        onExportJSON={handleExportJSON}
+        onLoadMockData={handleLoadMockData}
+        onResetData={handleResetData}
+        onOpenPresets={() => handleTabSelect('standards')}
+      />
 
       {/* Main View Container */}
       <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-5">
@@ -528,19 +521,13 @@ export default function App() {
       <ConfirmModal
         isOpen={resetConfirmOpen}
         onClose={() => setResetConfirmOpen(false)}
-        onConfirm={async () => {
-          try {
-            await dbClearAllOrders();
-            setOrders([]);
-            setResetConfirmOpen(false);
-            showToast('Todas as bateladas foram removidas da nuvem com sucesso.', 'info');
-          } catch (err) {
-            console.error('Erro ao resetar bateladas na nuvem:', err);
-            showToast('Erro ao remover bateladas da nuvem.', 'info');
-          }
+        onConfirm={() => {
+          setOrders([]);
+          setResetConfirmOpen(false);
+          showToast('Todos os dados de bateladas foram resetados.', 'info');
         }}
         title="Resetar Todas as Bateladas"
-        message="Tem certeza que deseja limpar todas as ordens de produção e apontamentos na nuvem? Os cadastros de biorreatores, operadores e padrões de tempos serão preservados."
+        message="Tem certeza que deseja limpar todas as ordens de produção e apontamentos? Os cadastros de biorreatores, operadores e padrões de tempos serão preservados."
         confirmLabel="Limpar Bateladas"
       />
 

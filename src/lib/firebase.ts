@@ -1,9 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getFirestore,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
   collection,
   doc,
   setDoc,
@@ -12,7 +9,6 @@ import {
   getDocs,
   writeBatch,
   getDoc,
-  Firestore,
 } from 'firebase/firestore';
 import {
   ProductionOrder,
@@ -52,45 +48,11 @@ const databaseId =
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with robust WebChannel auto-long-polling to prevent proxy/streaming dropouts
-function createFirestoreInstance(): Firestore {
-  const targetDbId = databaseId && databaseId !== '(default)' ? databaseId : undefined;
-  try {
-    return initializeFirestore(
-      app,
-      {
-        experimentalAutoDetectLongPolling: true,
-      },
-      targetDbId
-    );
-  } catch {
-    return targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
-  }
-}
-
-export const db: Firestore = createFirestoreInstance();
-
-/**
- * Uploads any locally stored orders that do not exist yet in Firestore
- * (e.g. orders created while offline or before connection established)
- */
-export async function syncLocalOrdersToCloudIfMissing(localOrders: ProductionOrder[]) {
-  if (!Array.isArray(localOrders) || localOrders.length === 0) return;
-  try {
-    const cloudOrdersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
-    const cloudIds = new Set<string>();
-    cloudOrdersSnap.forEach((d) => cloudIds.add(d.id));
-
-    for (const local of localOrders) {
-      if (local && local.id && !cloudIds.has(local.id)) {
-        console.log('Uploading local order to cloud:', local.opNumber);
-        await dbSaveOrder(local);
-      }
-    }
-  } catch (err) {
-    console.error('Error syncing local orders to cloud:', err);
-  }
-}
+// Initialize Firestore with specific database ID if configured
+export const db =
+  databaseId && databaseId !== '(default)'
+    ? getFirestore(app, databaseId)
+    : getFirestore(app);
 
 // Collection Names
 export const COLLECTIONS = {
@@ -102,117 +64,101 @@ export const COLLECTIONS = {
 };
 
 /**
- * Sanitizer for Firestore: Recursively removes or converts undefined values to null.
- * Firestore strictly rejects undefined, which caused silent save failures on optional fields.
+ * Sanitizes an object before writing to Firestore.
+ * Firestore strictly rejects keys with value `undefined`.
+ * This recursive cleaner removes undefined keys or replaces them with null
+ * so that saves across browsers and devices never fail with 'Unsupported field value: undefined'.
  */
-export function cleanForFirestore<T>(data: T): T {
-  if (data === undefined) return null as unknown as T;
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) {
+    return null as unknown as T;
+  }
   return JSON.parse(
-    JSON.stringify(data, (_key, value) => (value === undefined ? null : value))
+    JSON.stringify(data, (_, value) => (value === undefined ? null : value))
   );
 }
 
-// ----------------------------------------------------
-// Database Initialization and Baseline Population
-// ----------------------------------------------------
-
+// Check and Seed Database if Truly Fresh / Uninitialized (runs ONLY ONCE ever, never on refresh)
 export async function seedDatabaseIfEmpty() {
   try {
-    const batchesStateRef = doc(db, COLLECTIONS.CONFIGS, 'batches_state');
-    const batchesStateSnap = await getDoc(batchesStateRef);
-    const isIntentionallyCleared =
-      batchesStateSnap.exists() && batchesStateSnap.data()?.isCleared;
-
-    // Check if there are already any orders existing
-    const ordersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
-
-    // If orders collection is empty and user did NOT deliberately clear batches, populate baseline!
-    if (ordersSnap.empty && !isIntentionallyCleared) {
-      console.log('Populating cloud database with initial production orders...');
-      const batch = writeBatch(db);
-      INITIAL_MOCK_ORDERS.forEach((order) => {
-        const orderRef = doc(db, COLLECTIONS.ORDERS, order.id);
-        batch.set(orderRef, cleanForFirestore(order));
-      });
-      await batch.commit();
-      console.log('Initial orders successfully synced to cloud.');
-    }
-
-    // Check presets
-    const presetsSnap = await getDocs(collection(db, COLLECTIONS.PRESETS));
-    if (presetsSnap.empty) {
-      const batch = writeBatch(db);
-      const normalizedPresets = normalizeProductPresets(PRODUCT_PRESETS);
-      normalizedPresets.forEach((preset) => {
-        const presetRef = doc(db, COLLECTIONS.PRESETS, preset.id);
-        batch.set(presetRef, cleanForFirestore(preset));
-      });
-      await batch.commit();
-    }
-
-    // Check bioreactors
-    const biosSnap = await getDocs(collection(db, COLLECTIONS.BIOREACTORS));
-    if (biosSnap.empty) {
-      const batch = writeBatch(db);
-      INITIAL_BIOREACTORS.forEach((bio) => {
-        const bioRef = doc(db, COLLECTIONS.BIOREACTORS, bio.id);
-        batch.set(bioRef, cleanForFirestore(bio));
-      });
-      await batch.commit();
-    }
-
-    // Check operators
-    const opsSnap = await getDocs(collection(db, COLLECTIONS.OPERATORS));
-    if (opsSnap.empty) {
-      const batch = writeBatch(db);
-      INITIAL_OPERATORS.forEach((op) => {
-        const opRef = doc(db, COLLECTIONS.OPERATORS, op.id);
-        batch.set(opRef, cleanForFirestore(op));
-      });
-      await batch.commit();
-    }
-
-    // Check driver rules
-    const driverRulesRef = doc(db, COLLECTIONS.CONFIGS, 'driver_rules');
-    const driverRulesSnap = await getDoc(driverRulesRef);
-    if (!driverRulesSnap.exists()) {
-      await setDoc(
-        driverRulesRef,
-        cleanForFirestore({
-          id: 'driver_rules',
-          type: 'driver_rules',
-          rules: DEFAULT_COST_DRIVER_RULES,
-          updatedAt: new Date().toISOString(),
-        })
-      );
-    }
-
-    // Check variance thresholds
-    const thresholdsRef = doc(db, COLLECTIONS.CONFIGS, 'variance_thresholds');
-    const thresholdsSnap = await getDoc(thresholdsRef);
-    if (!thresholdsSnap.exists()) {
-      await setDoc(
-        thresholdsRef,
-        cleanForFirestore({
-          id: 'variance_thresholds',
-          type: 'variance_thresholds',
-          thresholds: DEFAULT_VARIANCE_THRESHOLDS,
-          updatedAt: new Date().toISOString(),
-        })
-      );
-    }
-
-    // Mark system as initialized
     const initRef = doc(db, COLLECTIONS.CONFIGS, 'system_init');
     const initSnap = await getDoc(initRef);
-    if (!initSnap.exists()) {
+
+    // If database was already initialized at least once, NEVER re-seed!
+    // This ensures user deletions and additions remain 100% persistent across reloads and devices.
+    if (initSnap.exists()) {
+      return;
+    }
+
+    // Check if there are already any orders or presets existing
+    const ordersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
+    const presetsSnap = await getDocs(collection(db, COLLECTIONS.PRESETS));
+
+    if (!ordersSnap.empty || !presetsSnap.empty) {
+      // Mark as initialized so it never checks again
       await setDoc(initRef, {
         isInitialized: true,
         initializedAt: new Date().toISOString(),
       });
+      return;
     }
+
+    console.log('First-time setup: Seeding initial baseline data...');
+    const batch = writeBatch(db);
+
+    // Seed Initial Orders
+    INITIAL_MOCK_ORDERS.forEach((order) => {
+      const orderRef = doc(db, COLLECTIONS.ORDERS, order.id);
+      batch.set(orderRef, sanitizeForFirestore(order));
+    });
+
+    // Seed Initial Presets
+    const normalizedPresets = normalizeProductPresets(PRODUCT_PRESETS);
+    normalizedPresets.forEach((preset) => {
+      const presetRef = doc(db, COLLECTIONS.PRESETS, preset.id);
+      batch.set(presetRef, sanitizeForFirestore(preset));
+    });
+
+    // Seed Initial Bioreactors
+    INITIAL_BIOREACTORS.forEach((bio) => {
+      const bioRef = doc(db, COLLECTIONS.BIOREACTORS, bio.id);
+      batch.set(bioRef, sanitizeForFirestore(bio));
+    });
+
+    // Seed Initial Operators
+    INITIAL_OPERATORS.forEach((op) => {
+      const opRef = doc(db, COLLECTIONS.OPERATORS, op.id);
+      batch.set(opRef, sanitizeForFirestore(op));
+    });
+
+    // Seed Driver Rules
+    const driverRulesRef = doc(db, COLLECTIONS.CONFIGS, 'driver_rules');
+    batch.set(driverRulesRef, sanitizeForFirestore({
+      id: 'driver_rules',
+      type: 'driver_rules',
+      rules: DEFAULT_COST_DRIVER_RULES,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    // Seed Variance Thresholds
+    const thresholdsRef = doc(db, COLLECTIONS.CONFIGS, 'variance_thresholds');
+    batch.set(thresholdsRef, sanitizeForFirestore({
+      id: 'variance_thresholds',
+      type: 'variance_thresholds',
+      thresholds: DEFAULT_VARIANCE_THRESHOLDS,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    // Mark system as initialized
+    batch.set(initRef, {
+      isInitialized: true,
+      initializedAt: new Date().toISOString(),
+    });
+
+    await batch.commit();
+    console.log('Baseline database initialized successfully.');
   } catch (error) {
-    console.error('Error verifying/populating cloud database:', error);
+    console.error('Error checking/seeding database:', error);
   }
 }
 
@@ -237,7 +183,7 @@ export function subscribeToOrders(
       onUpdate(orders);
     },
     (error) => {
-      console.error('Realtime orders sync error:', error);
+      console.error('Realtime orders error:', error);
       if (onError) onError(error);
     }
   );
@@ -255,10 +201,12 @@ export function subscribeToPresets(
       snapshot.forEach((docSnap) => {
         presets.push(docSnap.data() as ProductPreset);
       });
-      onUpdate(presets.length > 0 ? normalizeProductPresets(presets) : []);
+      if (presets.length > 0) {
+        onUpdate(normalizeProductPresets(presets));
+      }
     },
     (error) => {
-      console.error('Realtime presets sync error:', error);
+      console.error('Realtime presets error:', error);
       if (onError) onError(error);
     }
   );
@@ -276,10 +224,12 @@ export function subscribeToBioreactors(
       snapshot.forEach((docSnap) => {
         bios.push(docSnap.data() as BioreactorItem);
       });
-      onUpdate(bios);
+      if (bios.length > 0) {
+        onUpdate(bios);
+      }
     },
     (error) => {
-      console.error('Realtime bioreactors sync error:', error);
+      console.error('Realtime bioreactors error:', error);
       if (onError) onError(error);
     }
   );
@@ -297,10 +247,12 @@ export function subscribeToOperators(
       snapshot.forEach((docSnap) => {
         ops.push(docSnap.data() as OperatorItem);
       });
-      onUpdate(ops);
+      if (ops.length > 0) {
+        onUpdate(ops);
+      }
     },
     (error) => {
-      console.error('Realtime operators sync error:', error);
+      console.error('Realtime operators error:', error);
       if (onError) onError(error);
     }
   );
@@ -322,7 +274,7 @@ export function subscribeToDriverRules(
       }
     },
     (error) => {
-      console.error('Realtime driver rules sync error:', error);
+      console.error('Realtime driver rules error:', error);
       if (onError) onError(error);
     }
   );
@@ -344,7 +296,7 @@ export function subscribeToVarianceThresholds(
       }
     },
     (error) => {
-      console.error('Realtime variance thresholds sync error:', error);
+      console.error('Realtime variance thresholds error:', error);
       if (onError) onError(error);
     }
   );
@@ -356,11 +308,11 @@ export function subscribeToVarianceThresholds(
 
 export async function dbSaveOrder(order: ProductionOrder) {
   const docRef = doc(db, COLLECTIONS.ORDERS, order.id);
-  const sanitized = cleanForFirestore({
+  const cleanData = sanitizeForFirestore({
     ...order,
     updatedAt: new Date().toISOString(),
   });
-  await setDoc(docRef, sanitized, { merge: true });
+  await setDoc(docRef, cleanData, { merge: true });
 }
 
 export async function dbDeleteOrder(orderId: string) {
@@ -368,24 +320,9 @@ export async function dbDeleteOrder(orderId: string) {
   await deleteDoc(docRef);
 }
 
-export async function dbClearAllOrders() {
-  const batch = writeBatch(db);
-  const ordersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
-  ordersSnap.forEach((d) => batch.delete(d.ref));
-
-  // Mark intentional clear flag so auto-seeder doesn't immediately re-populate
-  const batchesStateRef = doc(db, COLLECTIONS.CONFIGS, 'batches_state');
-  batch.set(batchesStateRef, {
-    isCleared: true,
-    clearedAt: new Date().toISOString(),
-  });
-
-  await batch.commit();
-}
-
 export async function dbSavePreset(preset: ProductPreset) {
   const docRef = doc(db, COLLECTIONS.PRESETS, preset.id);
-  await setDoc(docRef, cleanForFirestore(preset), { merge: true });
+  await setDoc(docRef, sanitizeForFirestore(preset), { merge: true });
 }
 
 export async function dbDeletePreset(presetId: string) {
@@ -395,7 +332,7 @@ export async function dbDeletePreset(presetId: string) {
 
 export async function dbSaveBioreactor(bio: BioreactorItem) {
   const docRef = doc(db, COLLECTIONS.BIOREACTORS, bio.id);
-  await setDoc(docRef, cleanForFirestore(bio), { merge: true });
+  await setDoc(docRef, sanitizeForFirestore(bio), { merge: true });
 }
 
 export async function dbDeleteBioreactor(bioId: string) {
@@ -408,7 +345,7 @@ export async function syncAllBioreactors(items: BioreactorItem[]) {
     const batch = writeBatch(db);
     const existingSnap = await getDocs(collection(db, COLLECTIONS.BIOREACTORS));
     const currentIds = new Set(items.map((i) => i.id));
-
+    
     // Delete items removed
     existingSnap.forEach((d) => {
       if (!currentIds.has(d.id)) {
@@ -419,7 +356,7 @@ export async function syncAllBioreactors(items: BioreactorItem[]) {
     // Set/update current items
     items.forEach((item) => {
       const docRef = doc(db, COLLECTIONS.BIOREACTORS, item.id);
-      batch.set(docRef, cleanForFirestore(item), { merge: true });
+      batch.set(docRef, sanitizeForFirestore(item), { merge: true });
     });
 
     await batch.commit();
@@ -429,12 +366,22 @@ export async function syncAllBioreactors(items: BioreactorItem[]) {
   }
 }
 
+export async function dbSaveOperator(op: OperatorItem) {
+  const docRef = doc(db, COLLECTIONS.OPERATORS, op.id);
+  await setDoc(docRef, sanitizeForFirestore(op), { merge: true });
+}
+
+export async function dbDeleteOperator(opId: string) {
+  const docRef = doc(db, COLLECTIONS.OPERATORS, opId);
+  await deleteDoc(docRef);
+}
+
 export async function syncAllOperators(items: OperatorItem[]) {
   try {
     const batch = writeBatch(db);
     const existingSnap = await getDocs(collection(db, COLLECTIONS.OPERATORS));
     const currentIds = new Set(items.map((i) => i.id));
-
+    
     // Delete items removed
     existingSnap.forEach((d) => {
       if (!currentIds.has(d.id)) {
@@ -445,7 +392,7 @@ export async function syncAllOperators(items: OperatorItem[]) {
     // Set/update current items
     items.forEach((item) => {
       const docRef = doc(db, COLLECTIONS.OPERATORS, item.id);
-      batch.set(docRef, cleanForFirestore(item), { merge: true });
+      batch.set(docRef, sanitizeForFirestore(item), { merge: true });
     });
 
     await batch.commit();
@@ -460,7 +407,7 @@ export async function syncAllPresets(items: ProductPreset[]) {
     const batch = writeBatch(db);
     const existingSnap = await getDocs(collection(db, COLLECTIONS.PRESETS));
     const currentIds = new Set(items.map((i) => i.id));
-
+    
     // Delete items removed
     existingSnap.forEach((d) => {
       if (!currentIds.has(d.id)) {
@@ -471,7 +418,7 @@ export async function syncAllPresets(items: ProductPreset[]) {
     // Set/update current items
     items.forEach((item) => {
       const docRef = doc(db, COLLECTIONS.PRESETS, item.id);
-      batch.set(docRef, cleanForFirestore(item), { merge: true });
+      batch.set(docRef, sanitizeForFirestore(item), { merge: true });
     });
 
     await batch.commit();
@@ -483,38 +430,26 @@ export async function syncAllPresets(items: ProductPreset[]) {
 
 export async function dbSaveDriverRules(rules: CostDriverRule[]) {
   const docRef = doc(db, COLLECTIONS.CONFIGS, 'driver_rules');
-  await setDoc(
-    docRef,
-    cleanForFirestore({
-      id: 'driver_rules',
-      type: 'driver_rules',
-      rules,
-      updatedAt: new Date().toISOString(),
-    }),
-    { merge: true }
-  );
+  await setDoc(docRef, sanitizeForFirestore({
+    id: 'driver_rules',
+    type: 'driver_rules',
+    rules,
+    updatedAt: new Date().toISOString(),
+  }), { merge: true });
 }
 
 export async function dbSaveVarianceThresholds(thresholds: VarianceThresholdConfig) {
   const docRef = doc(db, COLLECTIONS.CONFIGS, 'variance_thresholds');
-  await setDoc(
-    docRef,
-    cleanForFirestore({
-      id: 'variance_thresholds',
-      type: 'variance_thresholds',
-      thresholds,
-      updatedAt: new Date().toISOString(),
-    }),
-    { merge: true }
-  );
+  await setDoc(docRef, sanitizeForFirestore({
+    id: 'variance_thresholds',
+    type: 'variance_thresholds',
+    thresholds,
+    updatedAt: new Date().toISOString(),
+  }), { merge: true });
 }
 
 export async function dbResetAllToDefaults() {
   const batch = writeBatch(db);
-
-  // Clear batches_state flag
-  const batchesStateRef = doc(db, COLLECTIONS.CONFIGS, 'batches_state');
-  batch.delete(batchesStateRef);
 
   // Clear existing orders
   const ordersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
@@ -535,51 +470,45 @@ export async function dbResetAllToDefaults() {
   // Insert mock orders
   INITIAL_MOCK_ORDERS.forEach((order) => {
     const orderRef = doc(db, COLLECTIONS.ORDERS, order.id);
-    batch.set(orderRef, cleanForFirestore(order));
+    batch.set(orderRef, sanitizeForFirestore(order));
   });
 
   // Insert normalized presets
   const normalizedPresets = normalizeProductPresets(PRODUCT_PRESETS);
   normalizedPresets.forEach((preset) => {
     const presetRef = doc(db, COLLECTIONS.PRESETS, preset.id);
-    batch.set(presetRef, cleanForFirestore(preset));
+    batch.set(presetRef, sanitizeForFirestore(preset));
   });
 
   // Insert bioreactors
   INITIAL_BIOREACTORS.forEach((bio) => {
     const bioRef = doc(db, COLLECTIONS.BIOREACTORS, bio.id);
-    batch.set(bioRef, cleanForFirestore(bio));
+    batch.set(bioRef, sanitizeForFirestore(bio));
   });
 
   // Insert operators
   INITIAL_OPERATORS.forEach((op) => {
     const opRef = doc(db, COLLECTIONS.OPERATORS, op.id);
-    batch.set(opRef, cleanForFirestore(op));
+    batch.set(opRef, sanitizeForFirestore(op));
   });
 
   // Reset driver rules
   const driverRulesRef = doc(db, COLLECTIONS.CONFIGS, 'driver_rules');
-  batch.set(
-    driverRulesRef,
-    cleanForFirestore({
-      id: 'driver_rules',
-      type: 'driver_rules',
-      rules: DEFAULT_COST_DRIVER_RULES,
-      updatedAt: new Date().toISOString(),
-    })
-  );
+  batch.set(driverRulesRef, sanitizeForFirestore({
+    id: 'driver_rules',
+    type: 'driver_rules',
+    rules: DEFAULT_COST_DRIVER_RULES,
+    updatedAt: new Date().toISOString(),
+  }));
 
   // Reset variance thresholds
   const thresholdsRef = doc(db, COLLECTIONS.CONFIGS, 'variance_thresholds');
-  batch.set(
-    thresholdsRef,
-    cleanForFirestore({
-      id: 'variance_thresholds',
-      type: 'variance_thresholds',
-      thresholds: DEFAULT_VARIANCE_THRESHOLDS,
-      updatedAt: new Date().toISOString(),
-    })
-  );
+  batch.set(thresholdsRef, sanitizeForFirestore({
+    id: 'variance_thresholds',
+    type: 'variance_thresholds',
+    thresholds: DEFAULT_VARIANCE_THRESHOLDS,
+    updatedAt: new Date().toISOString(),
+  }));
 
   await batch.commit();
 }
