@@ -47,7 +47,6 @@ const STORAGE_KEY_OPERATORS = 'biotime_operators_v2';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'grid' | 'analytics' | 'cadastros' | 'standards' | 'drivers'>('grid');
   const [isCloudConnected, setIsCloudConnected] = useState(true);
-  const [isLoadingCloud, setIsLoadingCloud] = useState(true);
 
   // Password Protection for Admin tabs ('cadastros', 'standards', 'drivers')
   const [isAuthenticatedAdmin, setIsAuthenticatedAdmin] = useState(false);
@@ -171,22 +170,23 @@ export default function App() {
     let unsubscribeRules: (() => void) | undefined;
     let unsubscribeThresholds: (() => void) | undefined;
 
-    const initFirebase = async () => {
+    const initFirebase = () => {
       try {
-        await seedDatabaseIfEmpty();
         setIsCloudConnected(true);
+
+        // Run baseline seed in background if uninitialized, without blocking listeners
+        seedDatabaseIfEmpty().catch((err) => console.error('Cloud seed background error:', err));
 
         unsubscribeOrders = subscribeToOrders(
           (cloudOrders) => {
             if (Array.isArray(cloudOrders)) {
               setOrders(cloudOrders);
             }
-            setIsLoadingCloud(false);
+            setIsCloudConnected(true);
           },
           (err) => {
             console.error('Orders sync error:', err);
             setIsCloudConnected(false);
-            setIsLoadingCloud(false);
           }
         );
 
@@ -534,22 +534,6 @@ export default function App() {
             : 'Critérios de Custos (HH / HM / GGF)'
         }
       />
-
-      {/* Cloud Sincronization Overlay */}
-      {isLoadingCloud && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-200">
-          <div className="relative">
-            <div className="w-14 h-14 border-4 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            </div>
-          </div>
-          <div className="text-center space-y-1">
-            <p className="text-sm font-bold text-white font-mono tracking-wider">BIOTIME INDUSTRIAL 4.0</p>
-            <p className="text-xs text-slate-400">Sincronizando com a nuvem em tempo real...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

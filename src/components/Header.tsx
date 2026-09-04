@@ -48,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPresets,
   isAuthenticatedAdmin = false,
   onLockAdmin,
+  isCloudConnected = true,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
@@ -101,6 +102,23 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded">
                   v4.0
                 </span>
+                {isCloudConnected ? (
+                  <span
+                    className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 rounded-full"
+                    title="Conectado ao Firebase Firestore em Tempo Real"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="hidden sm:inline">Tempo Real</span>
+                  </span>
+                ) : (
+                  <span
+                    className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium bg-amber-950/60 border border-amber-500/30 text-amber-400 rounded-full"
+                    title="Conectando à nuvem..."
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                    <span>Conectando...</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400">
                 Cálculo de Tempos, Critérios de Custos (HH/HM/GGF) & Desvios de Produção
