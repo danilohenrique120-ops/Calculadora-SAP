@@ -52,30 +52,45 @@ const databaseId =
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with multi-tab offline persistence if supported in browser environment
+// Initialize Firestore with robust WebChannel auto-long-polling to prevent proxy/streaming dropouts
 function createFirestoreInstance(): Firestore {
   const targetDbId = databaseId && databaseId !== '(default)' ? databaseId : undefined;
-  
-  if (typeof window !== 'undefined') {
-    try {
-      return initializeFirestore(
-        app,
-        {
-          localCache: persistentLocalCache({
-            tabManager: persistentMultipleTabManager(),
-          }),
-        },
-        targetDbId
-      );
-    } catch {
-      // Fallback if already initialized
-      return targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
-    }
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+      },
+      targetDbId
+    );
+  } catch {
+    return targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
   }
-  return targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
 }
 
 export const db: Firestore = createFirestoreInstance();
+
+/**
+ * Uploads any locally stored orders that do not exist yet in Firestore
+ * (e.g. orders created while offline or before connection established)
+ */
+export async function syncLocalOrdersToCloudIfMissing(localOrders: ProductionOrder[]) {
+  if (!Array.isArray(localOrders) || localOrders.length === 0) return;
+  try {
+    const cloudOrdersSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
+    const cloudIds = new Set<string>();
+    cloudOrdersSnap.forEach((d) => cloudIds.add(d.id));
+
+    for (const local of localOrders) {
+      if (local && local.id && !cloudIds.has(local.id)) {
+        console.log('Uploading local order to cloud:', local.opNumber);
+        await dbSaveOrder(local);
+      }
+    }
+  } catch (err) {
+    console.error('Error syncing local orders to cloud:', err);
+  }
+}
 
 // Collection Names
 export const COLLECTIONS = {

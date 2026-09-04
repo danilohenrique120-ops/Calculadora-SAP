@@ -31,6 +31,7 @@ import {
   dbSaveOrder,
   dbDeleteOrder,
   dbClearAllOrders,
+  syncLocalOrdersToCloudIfMissing,
   syncAllBioreactors,
   syncAllOperators,
   syncAllPresets,
@@ -174,6 +175,21 @@ export default function App() {
       try {
         setIsCloudConnected(true);
 
+        // Upload any existing local orders that haven't reached the cloud yet
+        try {
+          const savedLocal = localStorage.getItem(STORAGE_KEY_ORDERS);
+          if (savedLocal) {
+            const parsed = JSON.parse(savedLocal);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              syncLocalOrdersToCloudIfMissing(parsed).catch((e) =>
+                console.error('Local order cloud push error:', e)
+              );
+            }
+          }
+        } catch (e) {
+          console.error('Local backup sync error:', e);
+        }
+
         // Run baseline seed in background if uninitialized, without blocking listeners
         seedDatabaseIfEmpty().catch((err) => console.error('Cloud seed background error:', err));
 
@@ -305,7 +321,7 @@ export default function App() {
   };
 
   // Order Handlers
-  const handleSaveOrder = (savedOrder: ProductionOrder) => {
+  const handleSaveOrder = async (savedOrder: ProductionOrder) => {
     setOrders((prev) => {
       const existsIndex = prev.findIndex((o) => o.id === savedOrder.id);
       if (existsIndex >= 0) {
@@ -316,18 +332,26 @@ export default function App() {
       return [savedOrder, ...prev];
     });
 
-    dbSaveOrder(savedOrder).catch((err) => {
+    try {
+      await dbSaveOrder(savedOrder);
+      setIsCloudConnected(true);
+      showToast(`Ordem de Produção ${savedOrder.opNumber} salva e sincronizada na nuvem!`);
+    } catch (err: any) {
       console.error('Error saving order to Firestore:', err);
-    });
-
-    showToast(`Ordem de Produção ${savedOrder.opNumber} salva e sincronizada!`);
+      setIsCloudConnected(false);
+      showToast(`Erro ao salvar na nuvem: ${err?.message || 'Verifique sua conexão'}`, 'info');
+    }
   };
 
-  const handleUpdateOrder = (updatedOrder: ProductionOrder) => {
+  const handleUpdateOrder = async (updatedOrder: ProductionOrder) => {
     setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
-    dbSaveOrder(updatedOrder).catch((err) => {
+    try {
+      await dbSaveOrder(updatedOrder);
+      setIsCloudConnected(true);
+    } catch (err: any) {
       console.error('Error updating order to Firestore:', err);
-    });
+      setIsCloudConnected(false);
+    }
   };
 
   const handleDeleteOrder = (id: string) => {
