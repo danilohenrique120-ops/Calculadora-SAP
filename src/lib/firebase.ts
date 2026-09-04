@@ -176,10 +176,21 @@ export function subscribeToOrders(
     (snapshot) => {
       const orders: ProductionOrder[] = [];
       snapshot.forEach((docSnap) => {
-        orders.push(docSnap.data() as ProductionOrder);
+        const data = docSnap.data() as Partial<ProductionOrder>;
+        orders.push({
+          ...data,
+          id: docSnap.id || data.id || `ord-${Math.random().toString(36).substring(2, 9)}`,
+        } as ProductionOrder);
       });
-      // Sort orders descending by createdAt or opNumber
-      orders.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      // Sort orders descending by createdAt, prepDate or opNumber
+      orders.sort((a, b) => {
+        const timeA = a.createdAt || (a.prepDate ? `${a.prepDate}T00:00:00Z` : '') || '';
+        const timeB = b.createdAt || (b.prepDate ? `${b.prepDate}T00:00:00Z` : '') || '';
+        if (timeB && timeA && timeB !== timeA) {
+          return timeB.localeCompare(timeA);
+        }
+        return (b.opNumber || '').localeCompare(a.opNumber || '');
+      });
       onUpdate(orders);
     },
     (error) => {
@@ -199,7 +210,11 @@ export function subscribeToPresets(
     (snapshot) => {
       const presets: ProductPreset[] = [];
       snapshot.forEach((docSnap) => {
-        presets.push(docSnap.data() as ProductPreset);
+        const data = docSnap.data() as Partial<ProductPreset>;
+        presets.push({
+          ...data,
+          id: docSnap.id || data.id || 'preset',
+        } as ProductPreset);
       });
       if (presets.length > 0) {
         onUpdate(normalizeProductPresets(presets));
@@ -222,7 +237,11 @@ export function subscribeToBioreactors(
     (snapshot) => {
       const bios: BioreactorItem[] = [];
       snapshot.forEach((docSnap) => {
-        bios.push(docSnap.data() as BioreactorItem);
+        const data = docSnap.data() as Partial<BioreactorItem>;
+        bios.push({
+          ...data,
+          id: docSnap.id || data.id || 'bio',
+        } as BioreactorItem);
       });
       if (bios.length > 0) {
         onUpdate(bios);
@@ -245,7 +264,11 @@ export function subscribeToOperators(
     (snapshot) => {
       const ops: OperatorItem[] = [];
       snapshot.forEach((docSnap) => {
-        ops.push(docSnap.data() as OperatorItem);
+        const data = docSnap.data() as Partial<OperatorItem>;
+        ops.push({
+          ...data,
+          id: docSnap.id || data.id || 'op',
+        } as OperatorItem);
       });
       if (ops.length > 0) {
         onUpdate(ops);
@@ -512,3 +535,45 @@ export async function dbResetAllToDefaults() {
 
   await batch.commit();
 }
+
+/**
+ * Diagnostic helper to test real-time write/delete and measure latency
+ */
+export async function testFirestoreConnection(): Promise<{
+  success: boolean;
+  latencyMs: number;
+  databaseId: string;
+  error?: string;
+}> {
+  const start = Date.now();
+  const dbName = databaseId || '(default)';
+  try {
+    const testId = `ping-${Date.now()}`;
+    const testDoc = doc(db, COLLECTIONS.CONFIGS, testId);
+    await setDoc(testDoc, { ping: true, createdAt: new Date().toISOString() });
+    await deleteDoc(testDoc);
+    return {
+      success: true,
+      latencyMs: Date.now() - start,
+      databaseId: dbName,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('Firestore connection test failed:', err);
+    return {
+      success: false,
+      latencyMs: Date.now() - start,
+      databaseId: dbName,
+      error: errorMsg,
+    };
+  }
+}
+
+export function getDatabaseInfo() {
+  return {
+    projectId: firebaseConfig.projectId,
+    databaseId: databaseId || '(default)',
+    authDomain: firebaseConfig.authDomain,
+  };
+}
+

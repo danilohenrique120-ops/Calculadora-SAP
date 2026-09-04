@@ -18,6 +18,7 @@ import {
 } from './utils/calculations';
 import { ConfirmModal } from './components/ConfirmModal';
 import { PasswordModal } from './components/PasswordModal';
+import { SyncDiagnosticsModal } from './components/SyncDiagnosticsModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CheckCircle2 } from 'lucide-react';
 import {
@@ -151,6 +152,8 @@ export default function App() {
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<ProductionOrder | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   // Toast notifications
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
@@ -160,93 +163,92 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Real-time Firestore Subscriptions & Auto-seed
+  // Real-time Firestore Subscriptions & Immediate Attach
   useEffect(() => {
-    let unsubscribeOrders: (() => void) | undefined;
-    let unsubscribePresets: (() => void) | undefined;
-    let unsubscribeBios: (() => void) | undefined;
-    let unsubscribeOps: (() => void) | undefined;
-    let unsubscribeRules: (() => void) | undefined;
-    let unsubscribeThresholds: (() => void) | undefined;
-
-    const initFirebase = async () => {
-      try {
-        await seedDatabaseIfEmpty();
+    // 1. Immediately subscribe to all collections (instant real-time listening)
+    const unsubscribeOrders = subscribeToOrders(
+      (cloudOrders) => {
         setIsCloudConnected(true);
-
-        unsubscribeOrders = subscribeToOrders(
-          (cloudOrders) => {
-            if (Array.isArray(cloudOrders)) {
-              setOrders(cloudOrders);
-            }
-          },
-          (err) => {
-            console.error('Orders sync error:', err);
-            setIsCloudConnected(false);
-          }
-        );
-
-        unsubscribePresets = subscribeToPresets(
-          (cloudPresets) => {
-            if (Array.isArray(cloudPresets)) {
-              setPresets(normalizeProductPresets(cloudPresets));
-            }
-          },
-          (err) => console.error('Presets sync error:', err)
-        );
-
-        unsubscribeBios = subscribeToBioreactors(
-          (cloudBios) => {
-            if (Array.isArray(cloudBios)) {
-              setBioreactors(cloudBios);
-            }
-          },
-          (err) => console.error('Bioreactors sync error:', err)
-        );
-
-        unsubscribeOps = subscribeToOperators(
-          (cloudOps) => {
-            if (Array.isArray(cloudOps)) {
-              setOperators(cloudOps);
-            }
-          },
-          (err) => console.error('Operators sync error:', err)
-        );
-
-        unsubscribeRules = subscribeToDriverRules(
-          (cloudRules) => {
-            if (Array.isArray(cloudRules) && cloudRules.length > 0) {
-              setDriverRules(cloudRules);
-              saveStoredCostDriverRules(cloudRules);
-            }
-          },
-          (err) => console.error('Driver rules sync error:', err)
-        );
-
-        unsubscribeThresholds = subscribeToVarianceThresholds(
-          (cloudThresholds) => {
-            if (cloudThresholds) {
-              setVarianceThresholds(cloudThresholds);
-              saveStoredVarianceThresholds(cloudThresholds);
-            }
-          },
-          (err) => console.error('Variance thresholds sync error:', err)
-        );
-      } catch (err) {
-        console.error('Firebase initialization error:', err);
+        setLastSyncTime(new Date());
+        if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+          setOrders(cloudOrders);
+        }
+      },
+      (err) => {
+        console.error('Orders sync error:', err);
         setIsCloudConnected(false);
       }
-    };
+    );
 
-    initFirebase();
+    const unsubscribePresets = subscribeToPresets(
+      (cloudPresets) => {
+        setIsCloudConnected(true);
+        setLastSyncTime(new Date());
+        if (Array.isArray(cloudPresets) && cloudPresets.length > 0) {
+          setPresets(normalizeProductPresets(cloudPresets));
+        }
+      },
+      (err) => console.error('Presets sync error:', err)
+    );
+
+    const unsubscribeBios = subscribeToBioreactors(
+      (cloudBios) => {
+        setIsCloudConnected(true);
+        setLastSyncTime(new Date());
+        if (Array.isArray(cloudBios) && cloudBios.length > 0) {
+          setBioreactors(cloudBios);
+        }
+      },
+      (err) => console.error('Bioreactors sync error:', err)
+    );
+
+    const unsubscribeOps = subscribeToOperators(
+      (cloudOps) => {
+        setIsCloudConnected(true);
+        setLastSyncTime(new Date());
+        if (Array.isArray(cloudOps) && cloudOps.length > 0) {
+          setOperators(cloudOps);
+        }
+      },
+      (err) => console.error('Operators sync error:', err)
+    );
+
+    const unsubscribeRules = subscribeToDriverRules(
+      (cloudRules) => {
+        setIsCloudConnected(true);
+        setLastSyncTime(new Date());
+        if (Array.isArray(cloudRules) && cloudRules.length > 0) {
+          setDriverRules(cloudRules);
+          saveStoredCostDriverRules(cloudRules);
+        }
+      },
+      (err) => console.error('Driver rules sync error:', err)
+    );
+
+    const unsubscribeThresholds = subscribeToVarianceThresholds(
+      (cloudThresholds) => {
+        setIsCloudConnected(true);
+        setLastSyncTime(new Date());
+        if (cloudThresholds) {
+          setVarianceThresholds(cloudThresholds);
+          saveStoredVarianceThresholds(cloudThresholds);
+        }
+      },
+      (err) => console.error('Variance thresholds sync error:', err)
+    );
+
+    // 2. Run seed in background if the database is newly initialized
+    seedDatabaseIfEmpty().catch((err) => {
+      console.warn('Background seedDatabaseIfEmpty warning:', err);
+    });
 
     return () => {
-      if (unsubscribeOrders) unsubscribeOrders();
-      if (unsubscribePresets) unsubscribePresets();
-      if (unsubscribeBios) unsubscribeBios();
-      if (unsubscribeOps) unsubscribeOps();
-      if (unsubscribeRules) unsubscribeRules();
-      if (unsubscribeThresholds) unsubscribeThresholds();
+      unsubscribeOrders();
+      unsubscribePresets();
+      unsubscribeBios();
+      unsubscribeOps();
+      unsubscribeRules();
+      unsubscribeThresholds();
     };
   }, []);
 
@@ -426,7 +428,8 @@ export default function App() {
         isAuthenticatedAdmin={isAuthenticatedAdmin}
         onLockAdmin={handleLockAdmin}
         isCloudConnected={isCloudConnected}
-        onShareLink={handleShareLink}
+        onShareLink={() => setIsSyncModalOpen(true)}
+        onOpenCloudDiagnostics={() => setIsSyncModalOpen(true)}
         onNewOrder={handleOpenNewOrder}
         onExportCSV={handleExportCSV}
         onExportJSON={handleExportJSON}
@@ -543,6 +546,15 @@ export default function App() {
             ? 'Padrões de Engenharia (Standards)'
             : 'Critérios de Custos (HH / HM / GGF)'
         }
+      />
+
+      {/* Cloud Sync & Real-time Diagnostics Modal */}
+      <SyncDiagnosticsModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        isCloudConnected={isCloudConnected}
+        ordersCount={orders.length}
+        lastSyncTime={lastSyncTime}
       />
     </div>
   );

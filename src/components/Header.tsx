@@ -38,6 +38,7 @@ interface HeaderProps {
   onLockAdmin?: () => void;
   isCloudConnected?: boolean;
   onShareLink?: () => void;
+  onOpenCloudDiagnostics?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -54,6 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLockAdmin,
   isCloudConnected = true,
   onShareLink,
+  onOpenCloudDiagnostics,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
@@ -203,18 +205,16 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Quick Action Buttons */}
           <div className="flex items-center space-x-2">
             {/* Realtime Cloud Sync Indicator */}
-            <div
+            <button
               id="cloud-sync-status-badge"
-              className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all ${
+              type="button"
+              onClick={onOpenCloudDiagnostics || onShareLink}
+              className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
                 isCloudConnected
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                  : 'bg-amber-950/40 border-amber-500/30 text-amber-300'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/50'
+                  : 'bg-amber-950/40 border-amber-500/30 text-amber-300 hover:bg-amber-900/50'
               }`}
-              title={
-                isCloudConnected
-                  ? 'Nuvem Conectada: Todas as informações adicionadas são sincronizadas em tempo real entre todos os navegadores e computadores.'
-                  : 'Modo Offline: Reconectando à nuvem Firestore...'
-              }
+              title="Clique para ver o status da conexão em nuvem, testar latência ou ver links de compartilhamento"
             >
               {isCloudConnected ? (
                 <>
@@ -232,7 +232,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className="xl:hidden font-semibold">Offline</span>
                 </>
               )}
-            </div>
+            </button>
 
             {/* Share Link Button */}
             {onShareLink && (
