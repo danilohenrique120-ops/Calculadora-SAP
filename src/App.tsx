@@ -11,6 +11,7 @@ import { INITIAL_MOCK_ORDERS, PRODUCT_PRESETS, INITIAL_BIOREACTORS, INITIAL_OPER
 import { exportOrdersToCSV, exportOrdersToJSON } from './utils/export';
 import {
   normalizeProductPresets,
+  normalizeProductionOrder,
   getStoredCostDriverRules,
   saveStoredCostDriverRules,
   getStoredVarianceThresholds,
@@ -100,15 +101,20 @@ export default function App() {
     showToast('Painéis administrativos bloqueados com sucesso!', 'info');
   };
 
-  // Orders State
+  // Orders State (Pure single source of truth from Firestore with normalized schema)
   const [orders, setOrders] = useState<ProductionOrder[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ORDERS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(normalizeProductionOrder);
+        }
+      }
     } catch (e) {
-      console.error('Failed to load orders', e);
+      console.error('Failed to load cached orders', e);
     }
-    return INITIAL_MOCK_ORDERS;
+    return [];
   });
 
   // Presets / Products State (always normalized to guarantee all scales exist)
@@ -175,28 +181,17 @@ export default function App() {
       try {
         setIsCloudConnected(true);
 
-        // Upload any existing local orders that haven't reached the cloud yet
-        try {
-          const savedLocal = localStorage.getItem(STORAGE_KEY_ORDERS);
-          if (savedLocal) {
-            const parsed = JSON.parse(savedLocal);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              syncLocalOrdersToCloudIfMissing(parsed).catch((e) =>
-                console.error('Local order cloud push error:', e)
-              );
-            }
-          }
-        } catch (e) {
-          console.error('Local backup sync error:', e);
-        }
-
         // Run baseline seed in background if uninitialized, without blocking listeners
         seedDatabaseIfEmpty().catch((err) => console.error('Cloud seed background error:', err));
 
         unsubscribeOrders = subscribeToOrders(
           (cloudOrders) => {
             if (Array.isArray(cloudOrders)) {
-              setOrders(cloudOrders);
+              const normalized = cloudOrders.map(normalizeProductionOrder);
+              setOrders(normalized);
+              try {
+                localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(normalized));
+              } catch {}
             }
             setIsCloudConnected(true);
           },
@@ -322,20 +317,21 @@ export default function App() {
 
   // Order Handlers
   const handleSaveOrder = async (savedOrder: ProductionOrder) => {
+    const normalized = normalizeProductionOrder(savedOrder);
     setOrders((prev) => {
-      const existsIndex = prev.findIndex((o) => o.id === savedOrder.id);
+      const existsIndex = prev.findIndex((o) => o.id === normalized.id);
       if (existsIndex >= 0) {
         const next = [...prev];
-        next[existsIndex] = savedOrder;
+        next[existsIndex] = normalized;
         return next;
       }
-      return [savedOrder, ...prev];
+      return [normalized, ...prev];
     });
 
     try {
-      await dbSaveOrder(savedOrder);
+      await dbSaveOrder(normalized);
       setIsCloudConnected(true);
-      showToast(`Ordem de Produção ${savedOrder.opNumber} salva e sincronizada na nuvem!`);
+      showToast(`Ordem de Produção ${normalized.opNumber} salva e sincronizada na nuvem!`);
     } catch (err: any) {
       console.error('Error saving order to Firestore:', err);
       setIsCloudConnected(false);
@@ -344,9 +340,10 @@ export default function App() {
   };
 
   const handleUpdateOrder = async (updatedOrder: ProductionOrder) => {
-    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+    const normalized = normalizeProductionOrder(updatedOrder);
+    setOrders((prev) => prev.map((o) => (o.id === normalized.id ? normalized : o)));
     try {
-      await dbSaveOrder(updatedOrder);
+      await dbSaveOrder(normalized);
       setIsCloudConnected(true);
     } catch (err: any) {
       console.error('Error updating order to Firestore:', err);
@@ -428,20 +425,22 @@ export default function App() {
       )}
 
       {/* Top Header & SCADA Navigation */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={handleTabSelect}
-        orders={orders}
-        isAuthenticatedAdmin={isAuthenticatedAdmin}
-        onLockAdmin={handleLockAdmin}
-        isCloudConnected={isCloudConnected}
-        onNewOrder={handleOpenNewOrder}
-        onExportCSV={handleExportCSV}
-        onExportJSON={handleExportJSON}
-        onLoadMockData={handleLoadMockData}
-        onResetData={handleResetData}
-        onOpenPresets={() => handleTabSelect('standards')}
-      />
+      <ErrorBoundary fallbackTitle="Erro ao carregar cabeçalho">
+        <Header
+          activeTab={activeTab}
+          setActiveTab={handleTabSelect}
+          orders={orders}
+          isAuthenticatedAdmin={isAuthenticatedAdmin}
+          onLockAdmin={handleLockAdmin}
+          isCloudConnected={isCloudConnected}
+          onNewOrder={handleOpenNewOrder}
+          onExportCSV={handleExportCSV}
+          onExportJSON={handleExportJSON}
+          onLoadMockData={handleLoadMockData}
+          onResetData={handleResetData}
+          onOpenPresets={() => handleTabSelect('standards')}
+        />
+      </ErrorBoundary>
 
       {/* Main View Container */}
       <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-5">

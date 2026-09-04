@@ -99,35 +99,36 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
   const [directEditMode, setDirectEditMode] = useState(false);
 
   // Dynamic distinct lists from orders and master lists
+  // Dynamic distinct lists from orders and master lists
   const availableBioreactors = useMemo(() => {
     const list = new Set<string>();
-    bioreactors.forEach((b) => list.add(b.code));
-    BIOREACTOR_LIST.forEach((b) => list.add(b));
-    orders.forEach((o) => list.add(o.bioreactorId));
+    bioreactors.forEach((b) => b?.code && list.add(b.code));
+    BIOREACTOR_LIST.forEach((b) => b && list.add(b));
+    (orders || []).forEach((o) => o?.bioreactorId && list.add(o.bioreactorId));
     return Array.from(list).sort();
   }, [bioreactors, orders]);
 
   const availableOperators = useMemo(() => {
     const list = new Set<string>();
-    operators.forEach((op) => list.add(op.name));
-    OPERATOR_LIST.forEach((op) => list.add(op));
-    orders.forEach((o) => list.add(o.operatorName));
+    operators.forEach((op) => op?.name && list.add(op.name));
+    OPERATOR_LIST.forEach((op) => op && list.add(op));
+    (orders || []).forEach((o) => o?.operatorName && list.add(o.operatorName));
     return Array.from(list).sort();
   }, [operators, orders]);
 
   const availableProducts = useMemo(() => {
     const list = new Set<string>();
-    products.forEach((p) => list.add(p.name));
-    PRODUCT_PRESETS.forEach((p) => list.add(p.name));
-    orders.forEach((o) => list.add(o.productName));
+    products.forEach((p) => p?.name && list.add(p.name));
+    PRODUCT_PRESETS.forEach((p) => p?.name && list.add(p.name));
+    (orders || []).forEach((o) => o?.productName && list.add(o.productName));
     return Array.from(list).sort();
   }, [products, orders]);
 
   // Dynamic distinct years extracted from orders
   const availableYears = useMemo(() => {
     const list = new Set<string>();
-    orders.forEach((o) => {
-      if (o.prepDate) {
+    (orders || []).forEach((o) => {
+      if (o?.prepDate) {
         const year = o.prepDate.split('-')[0];
         if (year && year.length === 4) list.add(year);
       }
@@ -152,33 +153,37 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
 
   // Filter logic
   const filteredOrders = useMemo(() => {
-    return orders
+    const safeList = Array.isArray(orders)
+      ? orders.filter((o): o is ProductionOrder => Boolean(o && typeof o === 'object'))
+      : [];
+
+    return safeList
       .filter((order) => {
         // Search query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
           const matches =
-            order.opNumber.toLowerCase().includes(q) ||
-            order.bioreactorId.toLowerCase().includes(q) ||
-            order.operatorName.toLowerCase().includes(q) ||
-            order.productName.toLowerCase().includes(q) ||
+            (order.opNumber || '').toLowerCase().includes(q) ||
+            (order.bioreactorId || '').toLowerCase().includes(q) ||
+            (order.operatorName || '').toLowerCase().includes(q) ||
+            (order.productName || '').toLowerCase().includes(q) ||
             (order.linkedOrder?.linkedOpNumber || '').toLowerCase().includes(q) ||
             (order.notes || '').toLowerCase().includes(q);
           if (!matches) return false;
         }
 
         // Bioreactor filter
-        if (selectedBioreactor !== 'all' && order.bioreactorId !== selectedBioreactor) {
+        if (selectedBioreactor !== 'all' && (order.bioreactorId || '') !== selectedBioreactor) {
           return false;
         }
 
         // Operator filter
-        if (selectedOperator !== 'all' && order.operatorName !== selectedOperator) {
+        if (selectedOperator !== 'all' && (order.operatorName || '') !== selectedOperator) {
           return false;
         }
 
         // Product filter
-        if (selectedProduct !== 'all' && order.productName !== selectedProduct) {
+        if (selectedProduct !== 'all' && (order.productName || '') !== selectedProduct) {
           return false;
         }
 
@@ -197,12 +202,12 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
         return true;
       })
       .sort((a, b) => {
-        let valA: any = a[sortField as keyof ProductionOrder];
-        let valB: any = b[sortField as keyof ProductionOrder];
+        let valA: any = a ? (a[sortField as keyof ProductionOrder] ?? '') : '';
+        let valB: any = b ? (b[sortField as keyof ProductionOrder] ?? '') : '';
 
         if (sortField === 'totalVarianceMin') {
-          valA = calcOrderTotals(a, driverRules, varianceThresholds).totalVarianceMin;
-          valB = calcOrderTotals(b, driverRules, varianceThresholds).totalVarianceMin;
+          valA = calcOrderTotals(a, driverRules, varianceThresholds)?.totalVarianceMin || 0;
+          valB = calcOrderTotals(b, driverRules, varianceThresholds)?.totalVarianceMin || 0;
         }
 
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -260,12 +265,14 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
   };
 
   const handleStageUpdate = (order: ProductionOrder, stageId: ProcessStageId, updates: Partial<StageRecord>) => {
+    const safeStages = order.stages && typeof order.stages === 'object' ? order.stages : {};
+    const existingStage = safeStages[stageId] || { startTime: '', endTime: '', standardMin: 60 };
     const updatedOrder: ProductionOrder = {
       ...order,
       stages: {
-        ...order.stages,
+        ...safeStages,
         [stageId]: {
-          ...order.stages[stageId],
+          ...existingStage,
           ...updates,
         },
       },
@@ -654,7 +661,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                             <StageCell
                               stageId="setup"
                               stageName="1. Setup"
-                              record={order.stages['setup']}
+                              record={order.stages?.['setup']}
                               prepDate={order.prepDate}
                               orderProductName={order.productName}
                               orderScaleName={order.scaleName}
@@ -671,8 +678,8 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                           {/* 2. Abastecimento & Preparo Unificados */}
                           <td className="py-2 px-1.5 align-top">
                             <CombinedStageCell
-                              abastRecord={order.stages['abastecimento']}
-                              prepRecord={order.stages['preparo']}
+                              abastRecord={order.stages?.['abastecimento']}
+                              prepRecord={order.stages?.['preparo']}
                               prepDate={order.prepDate}
                               orderProductName={order.productName}
                               orderScaleName={order.scaleName}
@@ -694,7 +701,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                             <StageCell
                               stageId="inoculacao"
                               stageName="4. Inoculação"
-                              record={order.stages['inoculacao']}
+                              record={order.stages?.['inoculacao']}
                               prepDate={order.prepDate}
                               orderProductName={order.productName}
                               orderScaleName={order.scaleName}
@@ -713,7 +720,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                             <StageCell
                               stageId="multiplicacao"
                               stageName="5. Multiplicação"
-                              record={order.stages['multiplicacao']}
+                              record={order.stages?.['multiplicacao']}
                               prepDate={order.prepDate}
                               orderProductName={order.productName}
                               orderScaleName={order.scaleName}
@@ -967,7 +974,8 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                                 {/* Clean Timeline comparison */}
                                 <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
                                   {PROCESS_STAGES.map((s) => {
-                                    const stage = order.stages[s.id];
+                                    const safeOrderStages = order.stages && typeof order.stages === 'object' ? order.stages : {};
+                                    const stage = safeOrderStages[s.id];
                                     const m = calcStageMetrics(
                                       stage,
                                       order.prepDate,
@@ -976,7 +984,7 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
                                       {
                                         scaleName: order.scaleName,
                                         bioreactorId: order.bioreactorId,
-                                        allStages: order.stages,
+                                        allStages: safeOrderStages,
                                         productName: order.productName,
                                       },
                                       varianceThresholds
@@ -1298,28 +1306,29 @@ export const OperationalGrid: React.FC<OperationalGridProps> = ({
 
                     {/* Stage Step Indicators (4 Process Columns) */}
                     {(() => {
-                      const setupM = calcStageMetrics(order.stages['setup'], order.prepDate, 'setup', driverRules, {
+                      const safeStages = order.stages && typeof order.stages === 'object' ? order.stages : {};
+                      const setupM = calcStageMetrics(safeStages['setup'], order.prepDate, 'setup', driverRules, {
                         scaleName: order.scaleName,
                         bioreactorId: order.bioreactorId,
-                        allStages: order.stages,
+                        allStages: safeStages,
                         productName: order.productName,
                       }, varianceThresholds);
-                      const abastPrepM = calcCombinedAbastecimentoPreparoMetrics(order.stages, order.prepDate, {
+                      const abastPrepM = calcCombinedAbastecimentoPreparoMetrics(safeStages, order.prepDate, {
                         scaleName: order.scaleName,
                         bioreactorId: order.bioreactorId,
-                        allStages: order.stages,
+                        allStages: safeStages,
                         productName: order.productName,
                       }, driverRules, varianceThresholds);
-                      const inocM = calcStageMetrics(order.stages['inoculacao'], order.prepDate, 'inoculacao', driverRules, {
+                      const inocM = calcStageMetrics(safeStages['inoculacao'], order.prepDate, 'inoculacao', driverRules, {
                         scaleName: order.scaleName,
                         bioreactorId: order.bioreactorId,
-                        allStages: order.stages,
+                        allStages: safeStages,
                         productName: order.productName,
                       }, varianceThresholds);
-                      const multM = calcStageMetrics(order.stages['multiplicacao'], order.prepDate, 'multiplicacao', driverRules, {
+                      const multM = calcStageMetrics(safeStages['multiplicacao'], order.prepDate, 'multiplicacao', driverRules, {
                         scaleName: order.scaleName,
                         bioreactorId: order.bioreactorId,
-                        allStages: order.stages,
+                        allStages: safeStages,
                         productName: order.productName,
                       }, varianceThresholds);
 

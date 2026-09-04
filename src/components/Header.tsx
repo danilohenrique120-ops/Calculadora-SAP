@@ -77,11 +77,16 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Quick stats for top pill
-  const activeOrdersCount = orders.filter((o) => o.status === 'em_andamento').length;
-  const criticalOrdersCount = orders.filter((o) => {
-    const t = calcOrderTotals(o);
-    return t.hasBottleneck || t.overallStatus === 'critical';
+  // Quick stats for top pill (safe against undefined, null, or malformed items)
+  const safeOrders = Array.isArray(orders) ? orders.filter((o): o is ProductionOrder => Boolean(o && typeof o === 'object')) : [];
+  const activeOrdersCount = safeOrders.filter((o) => (o.status || 'em_andamento') === 'em_andamento').length;
+  const criticalOrdersCount = safeOrders.filter((o) => {
+    try {
+      const t = calcOrderTotals(o);
+      return Boolean(t && (t.hasBottleneck || t.overallStatus === 'critical'));
+    } catch {
+      return false;
+    }
   }).length;
 
   return (

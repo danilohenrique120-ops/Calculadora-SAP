@@ -989,164 +989,174 @@ export function calcStageMetrics(
   },
   customThresholds?: VarianceThresholdConfig
 ): StageCalculatedMetrics {
-  if (!stage || !stage.startTime || !stage.endTime) {
-    const defaultStdMin = stage?.standardMin || 60;
-    const stdBreakdown = stage?.setupCostBreakdown || getDefaultStageCostBreakdown(defaultStdMin);
-    return {
-      durationMin: 0,
-      varianceMin: 0,
-      variancePercent: 0,
-      status: 'pending',
-      isOvernight: false,
-      isMultiDay: false,
-      daysCount: 0,
-      isFilled: false,
-      costMetrics: {
-        standard: stdBreakdown,
-        real: { hhMin: 0, hmMin: 0, ggfMin: 0 },
-        variance: {
-          hhMin: 0,
-          hmMin: 0,
-          ggfMin: 0,
-          hhPercent: 0,
-          hmPercent: 0,
-          ggfPercent: 0,
-        },
-      },
-    };
-  }
+  const safeDefaultMin = (stage && typeof stage.standardMin === 'number' && stage.standardMin > 0) ? stage.standardMin : 60;
+  const safeDefaultBreakdown = (stage && stage.setupCostBreakdown) || getDefaultStageCostBreakdown(safeDefaultMin);
 
-  const sDate = stage.startDate || defaultDate;
-  const eDate = stage.endDate || stage.startDate || defaultDate;
-
-  const { diff: durationMin, isOvernight, isMultiDay, daysCount } = calculateMinutesDiff(
-    stage.startTime,
-    stage.endTime,
-    sDate,
-    eDate
-  );
-
-  // Standards fixos da etapa e escala (HH, HM, GGF)
-  let stdBreakdown: StageCostBreakdown | undefined = stage?.setupCostBreakdown;
-
-  // Se não houver breakdown ou se for zero, busca no cadastro de Padrões do produto e escala
-  if (!stdBreakdown || (stdBreakdown.hhMin === 0 && stdBreakdown.hmMin === 0 && stdBreakdown.ggfMin === 0)) {
-    if (stageId) {
-      const allPresets = getStoredProductPresets();
-      const matchedProd =
-        orderContext?.product ||
-        (orderContext?.productName ? allPresets.find((p) => p.name === orderContext.productName) : undefined) ||
-        allPresets[0];
-
-      if (matchedProd && orderContext?.scaleName) {
-        stdBreakdown = getProductStageCostBreakdown(
-          matchedProd,
-          orderContext.scaleName,
-          stageId,
-          stage?.standardMin
-        );
-      }
-    }
-  }
-
-  if (!stdBreakdown) {
-    stdBreakdown = getDefaultStageCostBreakdown(stage?.standardMin || 60);
-  }
-
-  // Regras de conversão de tempo configuradas pelo usuário
-  const rules = customRules || getStoredCostDriverRules();
-  const matchedRule = stageId ? rules.find((r) => r.stageId === stageId) : undefined;
-
-  const calcContext = {
-    scaleName: orderContext?.scaleName,
-    bioreactorId: orderContext?.bioreactorId,
-    productName: orderContext?.productName || orderContext?.product?.name,
-    allStages: orderContext?.allStages,
-    defaultDate,
-    stageId,
-  };
-
-  // Cálculo de HH Real usando a regra configurada
-  const realHhMin = calculateDriverMinutes(
-    durationMin,
-    stdBreakdown.hhMin,
-    matchedRule?.hhRule,
-    { ...calcContext, driverKey: 'hhRule' }
-  );
-
-  // Cálculo de HM Real usando a regra configurada
-  const realHmMin = calculateDriverMinutes(
-    durationMin,
-    stdBreakdown.hmMin,
-    matchedRule?.hmRule,
-    { ...calcContext, driverKey: 'hmRule' }
-  );
-
-  // Cálculo de GGF Real usando a regra configurada
-  const realGgfMin = calculateDriverMinutes(
-    durationMin,
-    stdBreakdown.ggfMin,
-    matchedRule?.ggfRule,
-    { ...calcContext, driverKey: 'ggfRule' }
-  );
-
-  const realBreakdown: StageCostBreakdown = {
-    hhMin: realHhMin,
-    hmMin: realHmMin,
-    ggfMin: realGgfMin,
-  };
-
-  // Variações individuais em minutos (Real - Standard)
-  const hhVarianceMin = realHhMin - stdBreakdown.hhMin;
-  const hmVarianceMin = realHmMin - stdBreakdown.hmMin;
-  const ggfVarianceMin = realGgfMin - stdBreakdown.ggfMin;
-
-  // Variação percentual de desvio: ((Real - Standard) / Standard) * 100
-  // Quando Real < Standard (ex: 117m vs 127m): -10m -> -7.9% (abaixo do standard / economia)
-  // Quando Real > Standard (ex: 3283m vs 3127m): +156m -> +5.0% (acima do standard / atraso)
-  const hhVariancePercent = stdBreakdown.hhMin > 0 ? ((realHhMin - stdBreakdown.hhMin) / stdBreakdown.hhMin) * 100 : (realHhMin === 0 ? 0 : 100);
-  const hmVariancePercent = stdBreakdown.hmMin > 0 ? ((realHmMin - stdBreakdown.hmMin) / stdBreakdown.hmMin) * 100 : (realHmMin === 0 ? 0 : 100);
-  const ggfVariancePercent = stdBreakdown.ggfMin > 0 ? ((realGgfMin - stdBreakdown.ggfMin) / stdBreakdown.ggfMin) * 100 : (realGgfMin === 0 ? 0 : 100);
-
-  // Desvio consolidado do direcionador principal (HM/Gargalo)
-  const primaryVarianceMin = hmVarianceMin;
-  const primaryVariancePercent = hmVariancePercent;
-
-  // Avaliação de conformidade por direcionador com base nas faixas configuradas
-  const hhStatus = evaluateVarianceStatus(hhVarianceMin, hhVariancePercent, customThresholds);
-  const hmStatus = evaluateVarianceStatus(hmVarianceMin, hmVariancePercent, customThresholds);
-
-  let status: StageStatus = 'ok';
-  if (hhStatus === 'critical' || hmStatus === 'critical') {
-    status = 'critical';
-  } else if (hhStatus === 'warning' || hmStatus === 'warning') {
-    status = 'warning';
-  } else {
-    status = 'ok';
-  }
-
-  return {
-    durationMin,
-    varianceMin: primaryVarianceMin,
-    variancePercent: primaryVariancePercent,
-    status,
-    isOvernight,
-    isMultiDay,
-    daysCount,
-    isFilled: true,
+  const pendingFallback: StageCalculatedMetrics = {
+    durationMin: 0,
+    varianceMin: 0,
+    variancePercent: 0,
+    status: 'pending',
+    isOvernight: false,
+    isMultiDay: false,
+    daysCount: 0,
+    isFilled: false,
     costMetrics: {
-      standard: stdBreakdown,
-      real: realBreakdown,
+      standard: safeDefaultBreakdown,
+      real: { hhMin: 0, hmMin: 0, ggfMin: 0 },
       variance: {
-        hhMin: hhVarianceMin,
-        hmMin: hmVarianceMin,
-        ggfMin: ggfVarianceMin,
-        hhPercent: hhVariancePercent,
-        hmPercent: hmVariancePercent,
-        ggfPercent: ggfVariancePercent,
+        hhMin: 0,
+        hmMin: 0,
+        ggfMin: 0,
+        hhPercent: 0,
+        hmPercent: 0,
+        ggfPercent: 0,
       },
     },
   };
+
+  if (!stage || !stage.startTime || !stage.endTime) {
+    return pendingFallback;
+  }
+
+  try {
+    const sDate = stage.startDate || defaultDate;
+    const eDate = stage.endDate || stage.startDate || defaultDate;
+
+    const { diff: durationMin, isOvernight, isMultiDay, daysCount } = calculateMinutesDiff(
+      stage.startTime,
+      stage.endTime,
+      sDate,
+      eDate
+    );
+
+    // Standards fixos da etapa e escala (HH, HM, GGF)
+    let stdBreakdown: StageCostBreakdown | undefined = stage?.setupCostBreakdown;
+
+    // Se não houver breakdown ou se for zero, busca no cadastro de Padrões do produto e escala
+    if (!stdBreakdown || (stdBreakdown.hhMin === 0 && stdBreakdown.hmMin === 0 && stdBreakdown.ggfMin === 0)) {
+      if (stageId) {
+        try {
+          const allPresets = getStoredProductPresets();
+          const matchedProd =
+            orderContext?.product ||
+            (orderContext?.productName ? allPresets.find((p) => p.name === orderContext.productName) : undefined) ||
+            allPresets[0];
+
+          if (matchedProd && orderContext?.scaleName) {
+            stdBreakdown = getProductStageCostBreakdown(
+              matchedProd,
+              orderContext.scaleName,
+              stageId,
+              stage?.standardMin
+            );
+          }
+        } catch {
+          // ignore lookup error
+        }
+      }
+    }
+
+    if (!stdBreakdown) {
+      stdBreakdown = getDefaultStageCostBreakdown(stage?.standardMin || 60);
+    }
+
+    // Regras de conversão de tempo configuradas pelo usuário
+    const rules = customRules || getStoredCostDriverRules();
+    const matchedRule = stageId ? rules.find((r) => r.stageId === stageId) : undefined;
+
+    const calcContext = {
+      scaleName: orderContext?.scaleName,
+      bioreactorId: orderContext?.bioreactorId,
+      productName: orderContext?.productName || orderContext?.product?.name,
+      allStages: orderContext?.allStages,
+      defaultDate,
+      stageId,
+    };
+
+    // Cálculo de HH Real usando a regra configurada
+    const realHhMin = calculateDriverMinutes(
+      durationMin,
+      stdBreakdown.hhMin,
+      matchedRule?.hhRule,
+      { ...calcContext, driverKey: 'hhRule' }
+    );
+
+    // Cálculo de HM Real usando a regra configurada
+    const realHmMin = calculateDriverMinutes(
+      durationMin,
+      stdBreakdown.hmMin,
+      matchedRule?.hmRule,
+      { ...calcContext, driverKey: 'hmRule' }
+    );
+
+    // Cálculo de GGF Real usando a regra configurada
+    const realGgfMin = calculateDriverMinutes(
+      durationMin,
+      stdBreakdown.ggfMin,
+      matchedRule?.ggfRule,
+      { ...calcContext, driverKey: 'ggfRule' }
+    );
+
+    const realBreakdown: StageCostBreakdown = {
+      hhMin: realHhMin,
+      hmMin: realHmMin,
+      ggfMin: realGgfMin,
+    };
+
+    // Variações individuais em minutos (Real - Standard)
+    const hhVarianceMin = realHhMin - stdBreakdown.hhMin;
+    const hmVarianceMin = realHmMin - stdBreakdown.hmMin;
+    const ggfVarianceMin = realGgfMin - stdBreakdown.ggfMin;
+
+    // Variação percentual de desvio: ((Real - Standard) / Standard) * 100
+    const hhVariancePercent = stdBreakdown.hhMin > 0 ? ((realHhMin - stdBreakdown.hhMin) / stdBreakdown.hhMin) * 100 : (realHhMin === 0 ? 0 : 100);
+    const hmVariancePercent = stdBreakdown.hmMin > 0 ? ((realHmMin - stdBreakdown.hmMin) / stdBreakdown.hmMin) * 100 : (realHmMin === 0 ? 0 : 100);
+    const ggfVariancePercent = stdBreakdown.ggfMin > 0 ? ((realGgfMin - stdBreakdown.ggfMin) / stdBreakdown.ggfMin) * 100 : (realGgfMin === 0 ? 0 : 100);
+
+    // Desvio consolidado do direcionador principal (HM/Gargalo)
+    const primaryVarianceMin = hmVarianceMin;
+    const primaryVariancePercent = hmVariancePercent;
+
+    // Avaliação de conformidade por direcionador com base nas faixas configuradas
+    const hhStatus = evaluateVarianceStatus(hhVarianceMin, hhVariancePercent, customThresholds);
+    const hmStatus = evaluateVarianceStatus(hmVarianceMin, hmVariancePercent, customThresholds);
+
+    let status: StageStatus = 'ok';
+    if (hhStatus === 'critical' || hmStatus === 'critical') {
+      status = 'critical';
+    } else if (hhStatus === 'warning' || hmStatus === 'warning') {
+      status = 'warning';
+    } else {
+      status = 'ok';
+    }
+
+    return {
+      durationMin,
+      varianceMin: primaryVarianceMin,
+      variancePercent: primaryVariancePercent,
+      status,
+      isOvernight,
+      isMultiDay,
+      daysCount,
+      isFilled: true,
+      costMetrics: {
+        standard: stdBreakdown,
+        real: realBreakdown,
+        variance: {
+          hhMin: hhVarianceMin,
+          hmMin: hmVarianceMin,
+          ggfMin: ggfVarianceMin,
+          hhPercent: hhVariancePercent,
+          hmPercent: hmVariancePercent,
+          ggfPercent: ggfVariancePercent,
+        },
+      },
+    };
+  } catch (err) {
+    console.error('Safe recovery in calcStageMetrics:', err);
+    return pendingFallback;
+  }
 }
 
 /**
@@ -1269,131 +1279,237 @@ export function calcCombinedAbastecimentoPreparoMetrics(
 }
 
 /**
+ * Normalizes any production order document (from Firestore, localStorage, or form inputs),
+ * guaranteeing all required fields and stages exist to prevent runtime crashes.
+ */
+export function normalizeProductionOrder(raw: any): ProductionOrder {
+  if (!raw || typeof raw !== 'object') {
+    const fallbackId = `ord-${Date.now()}`;
+    return {
+      id: fallbackId,
+      opNumber: 'OP-2026-000',
+      bioreactorId: 'BIO-5000',
+      prepDate: new Date().toISOString().split('T')[0],
+      operatorName: 'Operador',
+      productName: 'Soja',
+      scaleName: '5000L',
+      batchVolumeLiters: 5000,
+      status: 'em_andamento',
+      notes: '',
+      stages: {
+        setup: { startTime: '', endTime: '', standardMin: 60 },
+        abastecimento: { startTime: '', endTime: '', standardMin: 45 },
+        preparo: { startTime: '', endTime: '', standardMin: 90 },
+        inoculacao: { startTime: '', endTime: '', standardMin: 30 },
+        multiplicacao: { startTime: '', endTime: '', standardMin: 720 },
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const safeStages: Record<string, StageRecord> = { ...(raw.stages || {}) };
+  const standardStageDefaults: Record<string, number> = {
+    setup: 60,
+    abastecimento: 45,
+    preparo: 90,
+    inoculacao: 30,
+    multiplicacao: 720,
+  };
+
+  Object.entries(standardStageDefaults).forEach(([stId, defMin]) => {
+    if (!safeStages[stId] || typeof safeStages[stId] !== 'object') {
+      safeStages[stId] = {
+        startTime: '',
+        endTime: '',
+        standardMin: defMin,
+      };
+    } else {
+      safeStages[stId] = {
+        ...safeStages[stId],
+        startTime: safeStages[stId].startTime || '',
+        endTime: safeStages[stId].endTime || '',
+        standardMin: typeof safeStages[stId].standardMin === 'number' ? safeStages[stId].standardMin : defMin,
+      };
+    }
+  });
+
+  const validStatus =
+    raw.status === 'concluido' || raw.status === 'cancelado' || raw.status === 'em_andamento'
+      ? raw.status
+      : 'em_andamento';
+
+  return {
+    id: String(raw.id || `ord-${Date.now()}`),
+    opNumber: String(raw.opNumber || 'OP-2026-000'),
+    bioreactorId: String(raw.bioreactorId || 'BIO-5000'),
+    prepDate: String(raw.prepDate || new Date().toISOString().split('T')[0]),
+    operatorName: String(raw.operatorName || 'Operador'),
+    productName: String(raw.productName || 'Soja'),
+    scaleName: String(raw.scaleName || '5000L'),
+    batchVolumeLiters: typeof raw.batchVolumeLiters === 'number' ? raw.batchVolumeLiters : 5000,
+    status: validStatus,
+    notes: String(raw.notes || ''),
+    linkedOrder: raw.linkedOrder && typeof raw.linkedOrder === 'object' ? raw.linkedOrder : undefined,
+    stages: safeStages,
+    createdAt: String(raw.createdAt || new Date().toISOString()),
+    updatedAt: String(raw.updatedAt || new Date().toISOString()),
+  };
+}
+
+/**
  * Calculates aggregated order totals and status dynamically across stages,
  * strictly consolidating HH (Hora Homem), HM (Hora Máquina), and GGF.
  */
 export function calcOrderTotals(
-  order: ProductionOrder,
+  order: ProductionOrder | undefined | null,
   customRules?: CostDriverRule[],
   customThresholds?: VarianceThresholdConfig
 ): OrderTotalMetrics {
-  let totalRealMin = 0;
-  let totalStandardMin = 0;
-  let completedStagesCount = 0;
-  let maxVarianceMin = -Infinity;
-  let criticalStageId: ProcessStageId | undefined;
+  const defaultMetrics: OrderTotalMetrics = {
+    totalRealMin: 0,
+    totalStandardMin: 0,
+    totalVarianceMin: 0,
+    totalVariancePercent: 0,
+    overallStatus: 'pending',
+    completedStagesCount: 0,
+    totalStagesCount: 5,
+    hasBottleneck: false,
+    criticalVarianceMin: 0,
+    costTotals: {
+      hh: { standardMin: 0, realMin: 0, varianceMin: 0, variancePercent: 0 },
+      hm: { standardMin: 0, realMin: 0, varianceMin: 0, variancePercent: 0 },
+      ggf: { standardMin: 0, realMin: 0, varianceMin: 0, variancePercent: 0 },
+    },
+  };
 
-  let stdHhTotal = 0;
-  let stdHmTotal = 0;
-  let stdGgfTotal = 0;
-
-  let realHhTotal = 0;
-  let realHmTotal = 0;
-  let realGgfTotal = 0;
-
-  const stageKeys = Object.keys(order.stages || {});
-  const keysToEvaluate = stageKeys.length > 0 ? stageKeys : PROCESS_STAGES.map((s) => s.id);
-
-  keysToEvaluate.forEach((key) => {
-    const stage = order.stages?.[key];
-    const metrics = calcStageMetrics(
-      stage,
-      order.prepDate,
-      key as ProcessStageId,
-      customRules,
-      {
-        scaleName: order.scaleName,
-        bioreactorId: order.bioreactorId,
-        productName: order.productName,
-        allStages: order.stages,
-      },
-      customThresholds
-    );
-    if (stage) {
-      const stdBreakdown = stage.setupCostBreakdown || getDefaultStageCostBreakdown(stage.standardMin || 60);
-      stdHhTotal += stdBreakdown.hhMin;
-      stdHmTotal += stdBreakdown.hmMin;
-      stdGgfTotal += stdBreakdown.ggfMin;
-
-      if (metrics.isFilled) {
-        totalRealMin += metrics.durationMin;
-        totalStandardMin += stdBreakdown.hmMin || stage.standardMin;
-        completedStagesCount++;
-
-        if (metrics.costMetrics) {
-          realHhTotal += metrics.costMetrics.real.hhMin;
-          realHmTotal += metrics.costMetrics.real.hmMin;
-          realGgfTotal += metrics.costMetrics.real.ggfMin;
-        }
-
-        if (metrics.varianceMin > maxVarianceMin) {
-          maxVarianceMin = metrics.varianceMin;
-          criticalStageId = key;
-        }
-      }
-    }
-  });
-
-  const totalVarianceMin = realHmTotal - stdHmTotal;
-  const totalVariancePercent = stdHmTotal > 0 ? ((realHmTotal - stdHmTotal) / stdHmTotal) * 100 : 0;
-
-  let overallStatus: StageStatus = 'pending';
-  if (completedStagesCount > 0) {
-    overallStatus = evaluateVarianceStatus(totalVarianceMin, totalVariancePercent, customThresholds);
+  if (!order || typeof order !== 'object') {
+    return defaultMetrics;
   }
 
-  const hasBottleneck = keysToEvaluate.some((k) => {
-    const m = calcStageMetrics(
-      order.stages?.[k],
-      order.prepDate,
-      k as ProcessStageId,
-      customRules,
-      {
-        scaleName: order.scaleName,
-        bioreactorId: order.bioreactorId,
-        productName: order.productName,
-        allStages: order.stages,
+  try {
+    let totalRealMin = 0;
+    let totalStandardMin = 0;
+    let completedStagesCount = 0;
+    let maxVarianceMin = -Infinity;
+    let criticalStageId: ProcessStageId | undefined;
+
+    let stdHhTotal = 0;
+    let stdHmTotal = 0;
+    let stdGgfTotal = 0;
+
+    let realHhTotal = 0;
+    let realHmTotal = 0;
+    let realGgfTotal = 0;
+
+    const safeStages = order.stages && typeof order.stages === 'object' ? order.stages : {};
+    const stageKeys = Object.keys(safeStages);
+    const keysToEvaluate = stageKeys.length > 0 ? stageKeys : PROCESS_STAGES.map((s) => s.id);
+
+    keysToEvaluate.forEach((key) => {
+      const stage = safeStages[key];
+      const metrics = calcStageMetrics(
+        stage,
+        order.prepDate,
+        key as ProcessStageId,
+        customRules,
+        {
+          scaleName: order.scaleName,
+          bioreactorId: order.bioreactorId,
+          productName: order.productName,
+          allStages: safeStages,
+        },
+        customThresholds
+      );
+      if (stage) {
+        const stdBreakdown = stage.setupCostBreakdown || getDefaultStageCostBreakdown(stage.standardMin || 60);
+        stdHhTotal += stdBreakdown.hhMin || 0;
+        stdHmTotal += stdBreakdown.hmMin || 0;
+        stdGgfTotal += stdBreakdown.ggfMin || 0;
+
+        if (metrics.isFilled) {
+          totalRealMin += metrics.durationMin || 0;
+          totalStandardMin += stdBreakdown.hmMin || stage.standardMin || 0;
+          completedStagesCount++;
+
+          if (metrics.costMetrics) {
+            realHhTotal += metrics.costMetrics.real.hhMin || 0;
+            realHmTotal += metrics.costMetrics.real.hmMin || 0;
+            realGgfTotal += metrics.costMetrics.real.ggfMin || 0;
+          }
+
+          if (metrics.varianceMin > maxVarianceMin) {
+            maxVarianceMin = metrics.varianceMin;
+            criticalStageId = key;
+          }
+        }
+      }
+    });
+
+    const totalVarianceMin = realHmTotal - stdHmTotal;
+    const totalVariancePercent = stdHmTotal > 0 ? ((realHmTotal - stdHmTotal) / stdHmTotal) * 100 : 0;
+
+    let overallStatus: StageStatus = 'pending';
+    if (completedStagesCount > 0) {
+      overallStatus = evaluateVarianceStatus(totalVarianceMin, totalVariancePercent, customThresholds);
+    }
+
+    const hasBottleneck = keysToEvaluate.some((k) => {
+      const m = calcStageMetrics(
+        safeStages[k],
+        order.prepDate,
+        k as ProcessStageId,
+        customRules,
+        {
+          scaleName: order.scaleName,
+          bioreactorId: order.bioreactorId,
+          productName: order.productName,
+          allStages: safeStages,
+        },
+        customThresholds
+      );
+      return m.isFilled && m.status === 'critical';
+    });
+
+    // Consolidated Cost Totals (HH, HM, GGF) using deviation formula: ((Real - Standard) / Standard) * 100
+    const costTotals = {
+      hh: {
+        standardMin: stdHhTotal,
+        realMin: realHhTotal,
+        varianceMin: realHhTotal - stdHhTotal,
+        variancePercent: stdHhTotal > 0 ? ((realHhTotal - stdHhTotal) / stdHhTotal) * 100 : (completedStagesCount === 0 ? 0 : (realHhTotal === 0 ? 0 : 100)),
       },
-      customThresholds
-    );
-    return m.isFilled && m.status === 'critical';
-  });
+      hm: {
+        standardMin: stdHmTotal,
+        realMin: realHmTotal,
+        varianceMin: realHmTotal - stdHmTotal,
+        variancePercent: stdHmTotal > 0 ? ((realHmTotal - stdHmTotal) / stdHmTotal) * 100 : (completedStagesCount === 0 ? 0 : (realHmTotal === 0 ? 0 : 100)),
+      },
+      ggf: {
+        standardMin: stdGgfTotal,
+        realMin: realGgfTotal,
+        varianceMin: realGgfTotal - stdGgfTotal,
+        variancePercent: stdGgfTotal > 0 ? ((realGgfTotal - stdGgfTotal) / stdGgfTotal) * 100 : (completedStagesCount === 0 ? 0 : (realGgfTotal === 0 ? 0 : 100)),
+      },
+    };
 
-  // Consolidated Cost Totals (HH, HM, GGF) using deviation formula: ((Real - Standard) / Standard) * 100
-  const costTotals = {
-    hh: {
-      standardMin: stdHhTotal,
-      realMin: realHhTotal,
-      varianceMin: realHhTotal - stdHhTotal,
-      variancePercent: stdHhTotal > 0 ? ((realHhTotal - stdHhTotal) / stdHhTotal) * 100 : (completedStagesCount === 0 ? 0 : (realHhTotal === 0 ? 0 : 100)),
-    },
-    hm: {
-      standardMin: stdHmTotal,
-      realMin: realHmTotal,
-      varianceMin: realHmTotal - stdHmTotal,
-      variancePercent: stdHmTotal > 0 ? ((realHmTotal - stdHmTotal) / stdHmTotal) * 100 : (completedStagesCount === 0 ? 0 : (realHmTotal === 0 ? 0 : 100)),
-    },
-    ggf: {
-      standardMin: stdGgfTotal,
-      realMin: realGgfTotal,
-      varianceMin: realGgfTotal - stdGgfTotal,
-      variancePercent: stdGgfTotal > 0 ? ((realGgfTotal - stdGgfTotal) / stdGgfTotal) * 100 : (completedStagesCount === 0 ? 0 : (realGgfTotal === 0 ? 0 : 100)),
-    },
-  };
-
-  return {
-    totalRealMin,
-    totalStandardMin,
-    totalVarianceMin,
-    totalVariancePercent,
-    overallStatus,
-    completedStagesCount,
-    totalStagesCount: keysToEvaluate.length,
-    hasBottleneck,
-    criticalStageId: maxVarianceMin > 0 ? criticalStageId : undefined,
-    criticalVarianceMin: maxVarianceMin > 0 ? maxVarianceMin : 0,
-    costTotals,
-  };
+    return {
+      totalRealMin,
+      totalStandardMin,
+      totalVarianceMin,
+      totalVariancePercent,
+      overallStatus,
+      completedStagesCount,
+      totalStagesCount: keysToEvaluate.length,
+      hasBottleneck,
+      criticalStageId: maxVarianceMin > 0 ? criticalStageId : undefined,
+      criticalVarianceMin: maxVarianceMin > 0 ? maxVarianceMin : 0,
+      costTotals,
+    };
+  } catch (err) {
+    console.error('Safe recovery in calcOrderTotals:', err);
+    return defaultMetrics;
+  }
 }
 
 /**
