@@ -6,8 +6,21 @@ import { StandardsManager } from './components/StandardsManager';
 import { CostDriverRulesManager } from './components/CostDriverRulesManager';
 import { RegistrationManager } from './components/RegistrationManager';
 import { OrderFormModal } from './components/OrderFormModal';
-import { ProductionOrder, ProductPreset, BioreactorItem, OperatorItem, CostDriverRule, VarianceThresholdConfig, DEFAULT_COST_DRIVER_RULES } from './types';
-import { INITIAL_MOCK_ORDERS, PRODUCT_PRESETS, INITIAL_BIOREACTORS, INITIAL_OPERATORS } from './utils/mockData';
+import {
+  ProductionOrder,
+  ProductPreset,
+  BioreactorItem,
+  OperatorItem,
+  CostDriverRule,
+  VarianceThresholdConfig,
+  DEFAULT_COST_DRIVER_RULES,
+} from './types';
+import {
+  INITIAL_MOCK_ORDERS,
+  PRODUCT_PRESETS,
+  INITIAL_BIOREACTORS,
+  INITIAL_OPERATORS,
+} from './utils/mockData';
 import { exportOrdersToCSV, exportOrdersToJSON } from './utils/export';
 import {
   normalizeProductPresets,
@@ -110,7 +123,7 @@ export default function App() {
     return INITIAL_MOCK_ORDERS;
   });
 
-  // Presets / Products State (always normalized to guarantee all scales exist)
+  // Presets / Products State
   const [presets, setPresets] = useState<ProductPreset[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PRESETS);
@@ -170,7 +183,7 @@ export default function App() {
       (cloudOrders) => {
         setIsCloudConnected(true);
         setLastSyncTime(new Date());
-        if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+        if (Array.isArray(cloudOrders)) {
           setOrders(cloudOrders);
         }
       },
@@ -366,15 +379,6 @@ export default function App() {
     }
   };
 
-  const handleShareLink = () => {
-    try {
-      navigator.clipboard.writeText(window.location.href);
-      showToast('Link copiado! Envie este endereço para abrir em outros computadores.');
-    } catch {
-      showToast('Copie o endereço da barra do seu navegador para compartilhar.', 'info');
-    }
-  };
-
   const handleOpenNewOrder = () => {
     setEditingOrder(null);
     setIsOrderModalOpen(true);
@@ -398,6 +402,21 @@ export default function App() {
 
   const handleResetData = () => {
     setResetConfirmOpen(true);
+  };
+
+  const handleConfirmResetBatches = async () => {
+    try {
+      // Exclui todas as ordens da nuvem em lote/paralelo para sincronizar com todos
+      await Promise.all(orders.map((o) => dbDeleteOrder(o.id)));
+      setOrders([]);
+      showToast('Todas as bateladas foram removidas da nuvem com sucesso.', 'info');
+    } catch (err) {
+      console.error('Erro ao limpar bateladas na nuvem:', err);
+      setOrders([]);
+      showToast('Bateladas limpas localmente.', 'info');
+    } finally {
+      setResetConfirmOpen(false);
+    }
   };
 
   const handleExportCSV = () => {
@@ -524,11 +543,7 @@ export default function App() {
       <ConfirmModal
         isOpen={resetConfirmOpen}
         onClose={() => setResetConfirmOpen(false)}
-        onConfirm={() => {
-          setOrders([]);
-          setResetConfirmOpen(false);
-          showToast('Todos os dados de bateladas foram resetados.', 'info');
-        }}
+        onConfirm={handleConfirmResetBatches}
         title="Resetar Todas as Bateladas"
         message="Tem certeza que deseja limpar todas as ordens de produção e apontamentos? Os cadastros de biorreatores, operadores e padrões de tempos serão preservados."
         confirmLabel="Limpar Bateladas"
